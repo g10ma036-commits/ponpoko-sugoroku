@@ -1,19 +1,24 @@
-// ぽんぽこ列島のマップ。駅の座標と、駅どうしをつなぐ道（あいだのマスの種類）を書くと、
-// あいだのマスは自動で並べられる。
+// ぽんぽこ列島のマップ（日本列島の形）。駅の座標と、駅どうしをつなぐ道を書くと、
+// あいだのマスは道の長さに合わせて自動で並ぶ。
+// 座標は japan.ts の島の輪郭と同じ地図の座標（左上が 0,0）。
 //   + ふくマス  - とほほマス  c ふだマス  s みせマス  o おみくじマス
 
 import type { MapEdge, MapNode, RegionId, SquareKind } from '../engine/types';
+import { MAP_H, MAP_W } from './japan';
 
-export const MAP_W = 1240;
-export const MAP_H = 2000;
+export { MAP_H, MAP_W };
 
-/** lx, ly は地図上に地方名を書く位置 */
+/** lx, ly は地図上に地方名を書く位置（海の上） */
 export const REGIONS: Record<RegionId, { name: string; color: string; lx: number; ly: number }> = {
-  yukimi: { name: 'ゆきみ島', color: '#5aa2dc', lx: 590, ly: 250 },
-  yamabiko: { name: 'やまびこ地方', color: '#4fa64d', lx: 500, ly: 700 },
-  miyako: { name: 'みやこ地方', color: '#e8784e', lx: 290, ly: 1010 },
-  uzushio: { name: 'うずしお地方', color: '#d9a400', lx: 90, ly: 1345 },
-  hidamari: { name: 'ひだまり島', color: '#d667ad', lx: 50, ly: 1690 },
+  hokkaido: { name: '北海道', color: '#4a94d6', lx: 2440, ly: 380 },
+  tohoku: { name: '東北', color: '#3f9a46', lx: 2420, ly: 1560 },
+  kanto: { name: '関東', color: '#e5703f', lx: 2330, ly: 2950 },
+  chubu: { name: '中部', color: '#8a63cf', lx: 1380, ly: 1960 },
+  kinki: { name: '近畿', color: '#dd4f78', lx: 1640, ly: 3080 },
+  chugoku: { name: '中国', color: '#22999a', lx: 640, ly: 2270 },
+  shikoku: { name: '四国', color: '#cc9a00', lx: 880, ly: 3170 },
+  kyushu: { name: '九州', color: '#bf5f2a', lx: 40, ly: 3240 },
+  okinawa: { name: '沖縄', color: '#cf5aa6', lx: 560, ly: 3820 },
 };
 
 interface StationDef {
@@ -24,92 +29,166 @@ interface StationDef {
   region: RegionId;
 }
 
-const STATIONS: StationDef[] = [
-  // ゆきみ島（北の島）
-  { id: 'shirokuma', name: 'しろくま港', x: 860, y: 110, region: 'yukimi' },
-  { id: 'hotate', name: 'ほたて浜', x: 1110, y: 180, region: 'yukimi' },
-  { id: 'lavender', name: 'ラベンダー丘', x: 820, y: 345, region: 'yukimi' },
-  { id: 'koori', name: 'こおり湖', x: 1090, y: 400, region: 'yukimi' },
-  // やまびこ地方
-  { id: 'ringo', name: 'りんご村', x: 1070, y: 630, region: 'yamabiko' },
-  { id: 'yukemuri', name: 'ゆけむり温泉', x: 820, y: 650, region: 'yamabiko' },
-  { id: 'kokeshi', name: 'こけし里', x: 1130, y: 845, region: 'yamabiko' },
-  { id: 'hoshizora', name: 'ほしぞら高原', x: 930, y: 830, region: 'yamabiko' },
-  { id: 'soba', name: 'そばの里', x: 720, y: 870, region: 'yamabiko' },
-  // みやこ地方
-  { id: 'kagami', name: 'かがみ湖', x: 590, y: 1030, region: 'miyako' },
-  { id: 'karakuri', name: 'からくり町', x: 1060, y: 1050, region: 'miyako' },
-  { id: 'nigiwai', name: 'にぎわい城下', x: 810, y: 1080, region: 'miyako' },
-  { id: 'akarenga', name: 'あかれんが港', x: 990, y: 1260, region: 'miyako' },
-  { id: 'shika', name: 'しかの都', x: 520, y: 1215, region: 'miyako' },
-  { id: 'ocha', name: 'おちゃの郷', x: 740, y: 1285, region: 'miyako' },
-  { id: 'furin', name: 'ふうりん町', x: 880, y: 1440, region: 'miyako' },
-  // うずしお地方
-  { id: 'mikan', name: 'みかん浜', x: 400, y: 1420, region: 'uzushio' },
-  { id: 'udon', name: 'うどん町', x: 600, y: 1490, region: 'uzushio' },
-  { id: 'uzushio', name: 'うずしお岬', x: 760, y: 1610, region: 'uzushio' },
-  { id: 'shinju', name: 'しんじゅ島', x: 380, y: 1600, region: 'uzushio' },
-  // ひだまり島（南の島）
-  { id: 'tonkotsu', name: 'とんこつ町', x: 330, y: 1770, region: 'hidamari' },
-  { id: 'kemuri', name: 'けむり山', x: 560, y: 1760, region: 'hidamari' },
-  { id: 'sango', name: 'さんご岬', x: 150, y: 1850, region: 'hidamari' },
-  { id: 'satokibi', name: 'さとうきび村', x: 410, y: 1930, region: 'hidamari' },
-  { id: 'yashi', name: 'やしの浜', x: 700, y: 1890, region: 'hidamari' },
+const S = (id: string, name: string, x: number, y: number, region: RegionId): StationDef => ({ id, name, x, y, region });
+
+export const STATIONS: StationDef[] = [
+  // 北海道
+  S('shirokuma', 'しろくま港', 2048, 278, 'hokkaido'),
+  S('hotate', 'ほたて浜', 2363, 578, 'hokkaido'),
+  S('lavender', 'ラベンダー丘', 2190, 680, 'hokkaido'),
+  S('koori', 'こおり湖', 2650, 800, 'hokkaido'),
+  S('bokujo', 'ぼくじょう平原', 2420, 930, 'hokkaido'),
+  S('yukimatsuri', 'ゆきまつり町', 2010, 820, 'hokkaido'),
+  S('asaichi', 'あさいち港', 1907, 1054, 'hokkaido'),
+  // 東北
+  S('ringo', 'りんご村', 1990, 1380, 'tohoku'),
+  S('namahage', 'なまはげ岬', 1990, 1600, 'tohoku'),
+  S('soba', 'そばの里', 2170, 1560, 'tohoku'),
+  S('wakame', 'わかめ浜', 2260, 1780, 'tohoku'),
+  S('sakuranbo', 'さくらんぼ村', 2020, 1850, 'tohoku'),
+  S('tanabata', 'たなばた町', 2150, 2000, 'tohoku'),
+  S('yukemuri', 'ゆけむり温泉', 2020, 2129, 'tohoku'),
+  // 関東
+  S('ichigo', 'いちご村', 2085, 2289, 'kanto'),
+  S('natto', 'なっとう町', 2174, 2437, 'kanto'),
+  S('daruma', 'だるま町', 1932, 2385, 'kanto'),
+  S('nigiwai', 'にぎわい城下', 2061, 2567, 'kanto'),
+  S('akarenga', 'あかれんが港', 1943, 2693, 'kanto'),
+  S('nanohana', 'なのはな岬', 2170, 2730, 'kanto'),
+  // 中部
+  S('okome', 'おこめ町', 1849, 2100, 'chubu'),
+  S('hoshizora', 'ほしぞら高原', 1750, 2350, 'chubu'),
+  S('kinpaku', 'きんぱく町', 1461, 2250, 'chubu'),
+  S('kyoryu', 'きょうりゅう谷', 1405, 2413, 'chubu'),
+  S('gassho', 'がっしょう村', 1580, 2380, 'chubu'),
+  S('karakuri', 'からくり町', 1635, 2668, 'chubu'),
+  S('budou', 'ぶどう坂', 1855, 2540, 'chubu'),
+  S('ocha', 'おちゃの郷', 1783, 2758, 'chubu'),
+  // 近畿
+  S('kagami', 'かがみ湖', 1505, 2554, 'kinki'),
+  S('maiko', 'まいこ小路', 1301, 2549, 'kinki'),
+  S('kuidaore', 'くいだおれ町', 1271, 2805, 'kinki'),
+  S('haikara', 'ハイカラ港', 1140, 2611, 'kinki'),
+  S('shika', 'しかの都', 1404, 2694, 'kinki'),
+  S('umeboshi', 'うめぼし村', 1365, 2950, 'kinki'),
+  S('shinju', 'しんじゅ島', 1512, 2829, 'kinki'),
+  // 中国
+  S('sakyu', 'さきゅう浜', 1028, 2475, 'chugoku'),
+  S('masukatto', 'マスカット丘', 943, 2621, 'chugoku'),
+  S('enmusubi', 'えんむすび町', 763, 2433, 'chugoku'),
+  S('okonomi', 'おこのみ町', 775, 2638, 'chugoku'),
+  S('natsumikan', 'なつみかん町', 616, 2570, 'chugoku'),
+  S('fugu', 'ふぐ港', 468, 2657, 'chugoku'),
+  // 四国
+  S('udon', 'うどん町', 1008, 2766, 'shikoku'),
+  S('mikan', 'みかん浜', 762, 2880, 'shikoku'),
+  S('uzushio', 'うずしお岬', 1099, 2925, 'shikoku'),
+  S('katsuo', 'かつお浜', 925, 2915, 'shikoku'),
+  // 九州
+  S('tonkotsu', 'とんこつ町', 388, 2811, 'kyushu'),
+  S('castella', 'カステラ坂', 270, 2938, 'kyushu'),
+  S('jigoku', 'じごく温泉', 537, 2897, 'kyushu'),
+  S('hinokuni', 'ひのくに城', 469, 3055, 'kyushu'),
+  S('yashi', 'やしの浜', 572, 3195, 'kyushu'),
+  S('kemuri', 'けむり山', 439, 3305, 'kyushu'),
+  // 沖縄
+  S('satokibi', 'さとうきび村', 414, 3709, 'okinawa'),
+  S('sango', 'さんご岬', 330, 3861, 'okinawa'),
 ];
 
-/** [駅A, 駅B, あいだのマス, 船の航路か, 曲がり具合] */
-type LinkDef = [string, string, string, boolean?, number?];
+/** [駅A, 駅B, 曲がり具合, 船の航路か, マスの並び（省略すると自動）] */
+export type LinkDef = [string, string, number?, boolean?, string?];
 
-const LINKS: LinkDef[] = [
-  // ゆきみ島
-  ['shirokuma', 'hotate', '+c+', false, -30],
-  ['shirokuma', 'lavender', '-+', false, 20],
-  ['hotate', 'koori', 'o+', false, -20],
-  ['lavender', 'koori', '+s-', false, 30],
-  // ゆきみ島 → やまびこ（船）
-  ['koori', 'ringo', 'c+', true],
-  ['lavender', 'yukemuri', '+c-', true, -20],
-  // やまびこ地方
-  ['ringo', 'yukemuri', '+-', false, 25],
-  ['ringo', 'kokeshi', '+o', false, -15],
-  ['yukemuri', 'hoshizora', 'c+', false, -15],
-  ['yukemuri', 'soba', '-+', false, 15],
-  ['kokeshi', 'hoshizora', 's', false, 15],
-  ['hoshizora', 'soba', '+', false],
-  // みやこ地方
-  ['soba', 'kagami', '+c', false, 15],
-  ['soba', 'nigiwai', 'o+', false],
-  ['hoshizora', 'nigiwai', '+c-', false, 20],
-  ['kokeshi', 'karakuri', '-+', false, -15],
-  ['hoshizora', 'karakuri', '+s', false, -20],
-  ['karakuri', 'nigiwai', 'c+', false, -15],
-  ['kagami', 'nigiwai', '+-', false, -15],
-  ['kagami', 'shika', '-+', false, 15],
-  ['nigiwai', 'ocha', '+c', false],
-  ['nigiwai', 'akarenga', 's+', false, 15],
-  ['karakuri', 'akarenga', '+o', false, -15],
-  ['shika', 'ocha', '+-', false, 20],
-  ['ocha', 'furin', 'c+', false],
-  ['akarenga', 'furin', '-+', false, -15],
-  // みやこ → うずしお（橋・船）
-  ['shika', 'mikan', '+c', true],
-  ['furin', 'uzushio', 'o+', true],
-  // うずしお地方
-  ['mikan', 'udon', '+-', false, -15],
-  ['udon', 'uzushio', 'c+', false],
-  ['mikan', 'shinju', '+', false],
-  ['shinju', 'udon', 's+', false, 20],
-  // うずしお → ひだまり（船）
-  ['shinju', 'tonkotsu', 'c', true],
-  ['uzushio', 'kemuri', '+-', true],
-  // ひだまり島
-  ['tonkotsu', 'kemuri', '+o', false, -15],
-  ['tonkotsu', 'sango', '-+', false, -15],
-  ['sango', 'satokibi', 'c+', false, 25],
-  ['tonkotsu', 'satokibi', '+', false],
-  ['kemuri', 'satokibi', 's', false],
-  ['kemuri', 'yashi', '+c', false, -15],
-  ['satokibi', 'yashi', '-+', false, 15],
+export const LINKS: LinkDef[] = [
+  // 北海道
+  ['shirokuma', 'hotate'],
+  ['shirokuma', 'lavender', 36],
+  ['hotate', 'koori'],
+  ['hotate', 'lavender'],
+  ['lavender', 'yukimatsuri'],
+  ['lavender', 'bokujo'],
+  ['koori', 'bokujo'],
+  ['yukimatsuri', 'asaichi', 80],
+  // 北海道 → 東北（船）
+  ['asaichi', 'ringo', 0, true],
+  // 東北
+  ['ringo', 'namahage'],
+  ['ringo', 'soba'],
+  ['namahage', 'soba'],
+  ['namahage', 'sakuranbo'],
+  ['soba', 'wakame'],
+  ['wakame', 'tanabata'],
+  ['sakuranbo', 'tanabata'],
+  ['sakuranbo', 'okome'],
+  ['tanabata', 'yukemuri'],
+  ['yukemuri', 'okome'],
+  ['yukemuri', 'ichigo'],
+  ['tanabata', 'natto'],
+  // 関東
+  ['ichigo', 'daruma'],
+  ['ichigo', 'nigiwai'],
+  ['natto', 'nigiwai', -12],
+  ['daruma', 'nigiwai', 12],
+  ['daruma', 'hoshizora'],
+  ['nigiwai', 'akarenga'],
+  ['nigiwai', 'nanohana', -50, false, '+c'],
+  ['akarenga', 'nanohana', 0, true],
+  ['nigiwai', 'budou', -12],
+  ['akarenga', 'ocha'],
+  // 中部
+  ['okome', 'hoshizora', -50],
+  ['okome', 'kinpaku', -80],
+  ['hoshizora', 'gassho'],
+  ['hoshizora', 'budou'],
+  ['kinpaku', 'gassho', 12],
+  ['kinpaku', 'kyoryu'],
+  ['gassho', 'karakuri'],
+  ['budou', 'ocha'],
+  ['karakuri', 'ocha'],
+  // 近畿
+  ['karakuri', 'kagami', -12],
+  ['kyoryu', 'kagami', -50],
+  ['kagami', 'maiko', 65],
+  ['maiko', 'kuidaore'],
+  ['maiko', 'haikara'],
+  ['kuidaore', 'shika'],
+  ['kuidaore', 'umeboshi'],
+  ['shika', 'shinju'],
+  ['umeboshi', 'shinju', -12],
+  // 近畿 → 中国・四国
+  ['haikara', 'sakyu'],
+  ['haikara', 'masukatto'],
+  ['haikara', 'uzushio', -40, true, 'c+o'],
+  // 中国
+  ['masukatto', 'okonomi'],
+  ['masukatto', 'sakyu'],
+  ['sakyu', 'enmusubi'],
+  ['enmusubi', 'natsumikan'],
+  ['enmusubi', 'okonomi'],
+  ['natsumikan', 'fugu', 12],
+  ['okonomi', 'fugu'],
+  // 中国 → 四国・九州（橋・船）
+  ['masukatto', 'udon', 0, true],
+  ['okonomi', 'mikan', 0, true],
+  ['fugu', 'tonkotsu', 0, true],
+  // 四国
+  ['udon', 'mikan', -24],
+  ['udon', 'uzushio'],
+  ['mikan', 'katsuo', 36],
+  ['uzushio', 'katsuo'],
+  // 四国 → 九州（船）
+  ['mikan', 'jigoku', 0, true],
+  // 九州
+  ['tonkotsu', 'castella', 12],
+  ['tonkotsu', 'jigoku'],
+  ['castella', 'hinokuni', -65],
+  ['jigoku', 'yashi'],
+  ['hinokuni', 'kemuri'],
+  ['yashi', 'kemuri'],
+  // 九州 → 沖縄（船）
+  ['kemuri', 'satokibi', 0, true],
+  // 沖縄
+  ['satokibi', 'sango'],
 ];
 
 const KIND_OF: Record<string, SquareKind> = {
@@ -120,15 +199,55 @@ const KIND_OF: Record<string, SquareKind> = {
   o: 'omikuji',
 };
 
+/** マスの種類を決める袋（よく混ぜて順に取り出す）。ふく8：とほほ4：ふだ4：みせ2：おみくじ2 */
+const BAG = '++++++++----ccccssoo';
+
+/** 座標から決まる疑似乱数 */
+function hash(n: number) {
+  let x = Math.imul(n ^ 0x2c1b3c6d, 0x297a2d39);
+  x ^= x >>> 15;
+  x = Math.imul(x, 0x6c8e9cf5);
+  x ^= x >>> 13;
+  return (x >>> 0) / 4294967296;
+}
+
+function makeBag(round: number): string[] {
+  const b = BAG.split('');
+  for (let i = b.length - 1; i > 0; i--) {
+    const j = Math.floor(hash(round * 131 + i) * (i + 1));
+    [b[i], b[j]] = [b[j], b[i]];
+  }
+  return b;
+}
+
+/** 道の長さから、あいだに置くマスの数を決める（1マスの間かくは70くらい） */
+export const SPACING = 70;
+
 function build(): { nodes: MapNode[]; edges: MapEdge[] } {
   const nodes: MapNode[] = [];
   const edges: MapEdge[] = [];
   const byId = new Map<string, StationDef>();
   for (const s of STATIONS) {
+    if (byId.has(s.id)) throw new Error(`duplicate station ${s.id}`);
     byId.set(s.id, s);
     nodes.push({ id: s.id, kind: 'station', x: s.x, y: s.y, region: s.region, name: s.name });
   }
-  for (const [a, b, pattern, sea, bend = 0] of LINKS) {
+  let bag: string[] = [];
+  let round = 0;
+  const draw = (prev: string | undefined): string => {
+    for (let tries = 0; tries < 30; tries++) {
+      if (bag.length === 0) bag = makeBag(round++);
+      const k = bag.pop()!;
+      // みせ・おみくじ・とほほが続かないようにする
+      if (k !== '+' && k === prev && tries < 20) {
+        bag.unshift(k);
+        continue;
+      }
+      return k;
+    }
+    return '+';
+  };
+  for (const [a, b, bend = 0, sea = false, fixed] of LINKS) {
     const A = byId.get(a);
     const B = byId.get(b);
     if (!A || !B) throw new Error(`unknown station in link ${a}-${b}`);
@@ -138,16 +257,21 @@ function build(): { nodes: MapNode[]; edges: MapEdge[] } {
     const len = Math.hypot(B.x - A.x, B.y - A.y);
     const cx = mx + (-(B.y - A.y) / len) * bend * 2;
     const cy = my + ((B.x - A.x) / len) * bend * 2;
+    const curve = len + Math.abs(bend) * 1.2;
+    const n = fixed ? fixed.length : Math.max(1, Math.round(curve / SPACING) - 1);
     let prev = a;
-    const n = pattern.length;
+    let prevKind: string | undefined;
     for (let i = 0; i < n; i++) {
-      const t = (i + 1) / (n + 1);
+      // 駅の箱は大きいので、駅のとなりのマスは少しだけ離す
+      const t = (i + 1.25) / (n + 1.5);
       const x = (1 - t) * (1 - t) * A.x + 2 * (1 - t) * t * cx + t * t * B.x;
       const y = (1 - t) * (1 - t) * A.y + 2 * (1 - t) * t * cy + t * t * B.y;
       const id = `${a}~${b}~${i}`;
-      // 船の航路の途中のマスは、近いほうの地方に属する
+      const k = fixed ? fixed[i] : draw(prevKind);
+      prevKind = k;
+      // 道の途中のマスは、近いほうの地方に属する
       const region = t < 0.5 ? A.region : B.region;
-      nodes.push({ id, kind: KIND_OF[pattern[i]], x: Math.round(x), y: Math.round(y), region });
+      nodes.push({ id, kind: KIND_OF[k], x: Math.round(x), y: Math.round(y), region });
       edges.push({ a: prev, b: id, sea });
       prev = id;
     }

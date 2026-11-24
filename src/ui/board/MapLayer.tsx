@@ -1,5 +1,6 @@
 // マップの動かない部分（海・島・道・飾り）。hooks を使わないので、静止画の確認にも使える。
 import { memo } from 'react';
+import { ISLANDS, LAKES, coastDistance, geo, smoothPath } from '../../data/japan';
 import { EDGES, MAP_H, MAP_W, NODE, NODES, REGIONS } from '../../data/map';
 import type { MapNode } from '../../engine/types';
 
@@ -14,31 +15,72 @@ function hash(n: number) {
 
 const landEdges = EDGES.filter((e) => !e.sea);
 const seaEdges = EDGES.filter((e) => e.sea);
-const stations = NODES.filter((n) => n.kind === 'station');
+const islandPaths = ISLANDS.map((i) => ({ d: smoothPath(i.points), snowy: !!i.snowy }));
+const lakePaths = LAKES.map(smoothPath);
+/** 北海道（この高さより上）は雪景色 */
+const SNOW_Y = geo(141, 41.3)[1];
 
-/** 道に沿って、少し離れたところに木や山を置く */
-const decorations = (() => {
+function segDist(px: number, py: number, a: MapNode, b: MapNode) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const t = Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / (dx * dx + dy * dy || 1)));
+  return Math.hypot(px - (a.x + t * dx), py - (a.y + t * dy));
+}
+
+/** 大きな雪山：本当の場所の近くで、道やマスからいちばん離れた陸の上に置く */
+const findFuji = (): [number, number] => {
+  const [fx, fy] = geo(138.73, 35.36);
+  let best: [number, number] = [fx, fy];
+  let bestScore = -Infinity;
+  for (let dy = -160; dy <= 160; dy += 10) {
+    for (let dx = -160; dx <= 160; dx += 10) {
+      const x = fx + dx;
+      const y = fy + dy;
+      if (coastDistance(x, y) < 50) continue;
+      const nodeGap = Math.min(...NODES.map((n) => Math.hypot(n.x - x, n.y - y) - (n.kind === 'station' ? 120 : 30)));
+      const edgeGap = Math.min(...EDGES.map((e) => segDist(x, y, NODE[e.a], NODE[e.b])));
+      const score = Math.min(nodeGap, edgeGap - 10) - Math.hypot(dx, dy) * 0.05;
+      if (score > bestScore) {
+        bestScore = score;
+        best = [x, y];
+      }
+    }
+  }
+  return best;
+};
+
+/** 陸の上の、道やマスから離れたところに木や山や家を置く */
+const findDecorations = (fuji: [number, number]) => {
+  const FUJI = fuji;
   const out: { x: number; y: number; kind: 'tree' | 'mount' | 'house'; s: number }[] = [];
-  landEdges.forEach((e, i) => {
-    const a = NODE[e.a];
-    const b = NODE[e.b];
-    const len = Math.hypot(b.x - a.x, b.y - a.y);
-    const nx = -(b.y - a.y) / len;
-    const ny = (b.x - a.x) / len;
-    const r = hash(i * 7 + 3);
-    if (r < 0.55) return;
-    const side = hash(i * 13 + 1) < 0.5 ? -1 : 1;
-    const off = 44 + hash(i * 17 + 5) * 14;
-    const t = 0.35 + hash(i * 3) * 0.3;
-    const x = a.x + (b.x - a.x) * t + nx * off * side;
-    const y = a.y + (b.y - a.y) * t + ny * off * side;
-    // 駅やマスに近すぎるなら置かない
-    if (NODES.some((n) => Math.hypot(n.x - x, n.y - y) < 40)) return;
-    const k = hash(i * 29 + 11);
-    out.push({ x, y, kind: k < 0.55 ? 'tree' : k < 0.8 ? 'mount' : 'house', s: 0.8 + hash(i * 31) * 0.4 });
-  });
+  const STEP = 64;
+  let i = 0;
+  for (let gy = 0; gy < MAP_H; gy += STEP) {
+    for (let gx = 0; gx < MAP_W; gx += STEP) {
+      i++;
+      const x = gx + (hash(i * 5 + 1) - 0.5) * STEP * 0.8;
+      const y = gy + (hash(i * 7 + 2) - 0.5) * STEP * 0.8;
+      if (hash(i * 11 + 3) > 0.42) continue;
+      if (coastDistance(x, y) < 28) continue;
+      if (Math.hypot(x - FUJI[0], y - FUJI[1]) < 80) continue;
+      if (NODES.some((n) => Math.hypot(n.x - x, n.y - y) < (n.kind === 'station' ? 80 : 46))) continue;
+      if (EDGES.some((e) => segDist(x, y, NODE[e.a], NODE[e.b]) < 30)) continue;
+      const k = hash(i * 29 + 11);
+      out.push({ x, y, kind: k < 0.6 ? 'tree' : k < 0.88 ? 'mount' : 'house', s: 0.8 + hash(i * 31) * 0.4 });
+    }
+  }
   return out;
-})();
+};
+
+// 計算に少し時間がかかるので、はじめて描くときに一度だけ計算する
+let cache: { fuji: [number, number]; decorations: ReturnType<typeof findDecorations> } | null = null;
+function scenery() {
+  if (!cache) {
+    const fuji = findFuji();
+    cache = { fuji, decorations: findDecorations(fuji) };
+  }
+  return cache;
+}
 
 function Deco({ x, y, kind, s, snowy }: { x: number; y: number; kind: string; s: number; snowy: boolean }) {
   if (kind === 'tree') {
@@ -66,10 +108,21 @@ function Deco({ x, y, kind, s, snowy }: { x: number; y: number; kind: string; s:
   );
 }
 
+/** 大きな雪山（ふじさんのような山） */
+function BigMountain({ x, y }: { x: number; y: number }) {
+  return (
+    <g transform={`translate(${x} ${y})`}>
+      <path d="M-62,34 L-14,-38 Q0,-50 14,-38 L62,34 Z" fill="#6f9fc4" stroke="#4a6f8f" strokeWidth={3} strokeLinejoin="round" />
+      <path d="M-26,-20 L-14,-38 Q0,-50 14,-38 L26,-20 L16,-14 L8,-22 L0,-12 L-8,-22 L-16,-14 Z" fill="#fff" />
+    </g>
+  );
+}
+
 const seg = (a: MapNode, b: MapNode) => `M${a.x},${a.y} L${b.x},${b.y}`;
 const landPath = landEdges.map((e) => seg(NODE[e.a], NODE[e.b])).join(' ');
 
 export const MapLayer = memo(function MapLayer() {
+  const { fuji, decorations } = scenery();
   return (
     <g>
       <defs>
@@ -81,39 +134,28 @@ export const MapLayer = memo(function MapLayer() {
       <rect x={-600} y={-600} width={MAP_W + 1200} height={MAP_H + 1200} fill="#7cc6e6" />
       <rect x={-600} y={-600} width={MAP_W + 1200} height={MAP_H + 1200} fill="url(#waves)" />
 
-      {/* 島：太い線を重ねて、まるい陸地にする */}
-      <g strokeLinecap="round" strokeLinejoin="round" fill="none">
-        <path d={landPath} stroke="#e9d39a" strokeWidth={156} />
-        {stations.map((n) => (
-          <circle key={`s1${n.id}`} cx={n.x} cy={n.y} r={84} fill="#e9d39a" />
+      {/* 島：砂浜のふち → 陸 */}
+      <g strokeLinejoin="round">
+        {islandPaths.map((p, i) => (
+          <path key={`a${i}`} d={p.d} fill="#e9d39a" stroke="#e9d39a" strokeWidth={44} />
         ))}
-        <path d={landPath} stroke="#f4e3b2" strokeWidth={140} />
-        {stations.map((n) => (
-          <circle key={`s2${n.id}`} cx={n.x} cy={n.y} r={76} fill="#f4e3b2" />
+        {islandPaths.map((p, i) => (
+          <path key={`b${i}`} d={p.d} fill="#f4e3b2" stroke="#f4e3b2" strokeWidth={24} />
         ))}
-        <path d={landPath} stroke="#a9d98b" strokeWidth={116} />
-        {stations.map((n) => (
-          <circle key={`s3${n.id}`} cx={n.x} cy={n.y} r={64} fill={n.region === 'yukimi' ? '#e6f1f2' : '#a9d98b'} />
+        {islandPaths.map((p, i) => (
+          <path key={`c${i}`} d={p.d} fill={p.snowy ? '#e6f1f2' : '#a9d98b'} />
+        ))}
+        {lakePaths.map((d, i) => (
+          <path key={`l${i}`} d={d} fill="#7cc6e6" stroke="#f4e3b2" strokeWidth={10} />
         ))}
       </g>
-      {/* ゆきみ島は雪景色 */}
-      <path
-        d={landEdges
-          .filter((e) => NODE[e.a].region === 'yukimi' && NODE[e.b].region === 'yukimi')
-          .map((e) => seg(NODE[e.a], NODE[e.b]))
-          .join(' ')}
-        stroke="#e6f1f2"
-        strokeWidth={116}
-        strokeLinecap="round"
-        fill="none"
-      />
 
-      {decorations.map((d, i) => {
-        const snowy = d.y < 470;
-        return <Deco key={i} {...d} snowy={snowy} />;
-      })}
+      {decorations.map((d, i) => (
+        <Deco key={i} {...d} snowy={d.y < SNOW_Y} />
+      ))}
+      <BigMountain x={fuji[0]} y={fuji[1]} />
 
-      {/* 船の航路 */}
+      {/* 船の航路・橋 */}
       <g fill="none" strokeLinecap="round">
         {seaEdges.map((e, i) => (
           <path key={i} d={seg(NODE[e.a], NODE[e.b])} stroke="#ffffff" strokeWidth={8} strokeDasharray="4 16" />
@@ -127,7 +169,7 @@ export const MapLayer = memo(function MapLayer() {
 
       {/* 地方の名前 */}
       {(Object.keys(REGIONS) as (keyof typeof REGIONS)[]).map((r) => (
-        <text key={r} x={REGIONS[r].lx} y={REGIONS[r].ly} className="region-label" fill={REGIONS[r].color} stroke="#fff" strokeWidth={7} paintOrder="stroke">
+        <text key={r} x={REGIONS[r].lx} y={REGIONS[r].ly} className="region-label" fill={REGIONS[r].color} stroke="#fff" strokeWidth={9} paintOrder="stroke">
           {REGIONS[r].name}
         </text>
       ))}

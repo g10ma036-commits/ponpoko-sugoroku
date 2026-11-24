@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NODE } from '../data/map';
+import { NODE, START_STATION, STATION_IDS } from '../data/map';
 import { PROPS_BY_STATION } from '../data/properties';
 import { decide } from './ai';
 import { assets, createGame, income, reduce, yearlyIncome } from './game';
@@ -35,6 +35,17 @@ describe('マップ', () => {
   });
   it('どのマスにも行き先がある', () => {
     for (const id of Object.keys(NODE)) expect(ADJ[id].length).toBeGreaterThan(0);
+  });
+  it('どの駅にも物件が3件以上ある', () => {
+    for (const id of STATION_IDS) expect(PROPS_BY_STATION[id]?.length ?? 0).toBeGreaterThanOrEqual(3);
+  });
+  it('おまつり会場は、前の会場から10〜28マスの駅に決まる', () => {
+    for (let seed = 1; seed <= 30; seed++) {
+      const s = createGame(cfg(seed));
+      const d = dist(START_STATION, s.destination);
+      expect(d).toBeGreaterThanOrEqual(10);
+      expect(d).toBeLessThanOrEqual(28);
+    }
   });
 });
 

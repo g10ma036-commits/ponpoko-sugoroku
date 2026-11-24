@@ -1,6 +1,6 @@
 // ゲーム全体で使う型。engine/ は React に依存しない純TS。
 
-export type RegionId = 'yukimi' | 'yamabiko' | 'miyako' | 'uzushio' | 'hidamari';
+export type RegionId = 'hokkaido' | 'tohoku' | 'kanto' | 'chubu' | 'kinki' | 'chugoku' | 'shikoku' | 'kyushu' | 'okinawa';
 export type SquareKind = 'station' | 'plus' | 'minus' | 'card' | 'shop' | 'omikuji';
 export type PropCategory = 'food' | 'farm' | 'industry' | 'tourism';
 

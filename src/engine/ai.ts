@@ -72,21 +72,21 @@ function decideAction(s: GameState, p: Player): Action {
     if (has('hayate') && d >= 8 && d <= 13) return use('hayate');
     if (has('hayate') && d >= 18) return use('hayate');
     if (has('kakeashi') && d >= 12) return use('kakeashi');
-    if (has('fusen') && d >= 22) return use('fusen');
+    if (has('fusen') && d >= 30) return use('fusen');
     return { t: 'ROLL' };
   }
   if (p.sleep === 0) {
     if (has('hayate') && d >= 10) return use('hayate');
     if (has('kakeashi') && d >= 6) return use('kakeashi');
   }
-  if (has('fusen') && d >= 22 && lv >= 2) return use('fusen');
+  if (has('fusen') && d >= 30 && lv >= 2) return use('fusen');
   return { t: 'ROLL' };
 }
 
 const LAND_BONUS: Record<string, number> = { minus: 15, plus: -3, card: -3, omikuji: -2, shop: 0, station: -4 };
 
 function decideDir(s: GameState, p: Player, options: string[], steps: number): string {
-  const mistake = p.cpuLevel === 1 ? 0.35 : p.cpuLevel === 2 ? 0.1 : 0;
+  const mistake = p.cpuLevel === 1 ? 0.2 : p.cpuLevel === 2 ? 0.1 : 0;
   if (noise(s, steps * 31 + options.length) < mistake) {
     return options[Math.floor(noise(s, 99 + steps) * options.length)];
   }

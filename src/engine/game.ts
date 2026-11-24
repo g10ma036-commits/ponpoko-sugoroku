@@ -108,9 +108,15 @@ export function createGame(cfg: GameConfig): GameState {
   return s;
 }
 
+/** 次のおまつり会場は、今の会場から近すぎず遠すぎない駅（日本中を少しずつ旅していく） */
+const DEST_MIN = 10;
+const DEST_MAX = 28;
+
 function chooseDestination(s: GameState, from: string): string {
-  const far = STATION_IDS.filter((id) => id !== from && dist(from, id) >= 10);
-  const pool = far.length > 0 ? far : STATION_IDS.filter((id) => id !== from);
+  const d = (id: string) => dist(from, id);
+  let pool = STATION_IDS.filter((id) => id !== from && d(id) >= DEST_MIN && d(id) <= DEST_MAX);
+  if (pool.length === 0) pool = STATION_IDS.filter((id) => id !== from && d(id) >= DEST_MIN);
+  if (pool.length === 0) pool = STATION_IDS.filter((id) => id !== from);
   return pick(s, pool);
 }
 
@@ -637,8 +643,8 @@ function monthStart(s: GameState) {
       break;
     }
     case 2: {
-      const lines = seasonalPayout(s, (p) => NODE[p.station].region === 'yukimi', 0.5);
-      push({ title: 'ゆきみ島の雪まつり', text: `ゆきみ島の物件が にぎわった！\n${lines.length ? lines.join('\n') : '物件を持っている人は いなかった…'}` });
+      const lines = seasonalPayout(s, (p) => NODE[p.station].region === 'hokkaido', 0.5);
+      push({ title: '北海道の雪まつり', text: `北海道の物件が にぎわった！\n${lines.length ? lines.join('\n') : '物件を持っている人は いなかった…'}` });
       break;
     }
     case 4: {

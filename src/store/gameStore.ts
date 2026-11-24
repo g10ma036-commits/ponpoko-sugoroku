@@ -1,6 +1,8 @@
 // 画面の状態とゲームの状態をまとめて持つ。ゲームは毎回の操作のあとに自動保存する。
 import { create } from 'zustand';
 import { setSound } from '../audio/sound';
+import { NODE } from '../data/map';
+import { PROP } from '../data/properties';
 import { createGame, reduce } from '../engine/game';
 import type { Action, GameConfig, GameState } from '../engine/types';
 
@@ -36,9 +38,27 @@ function save(key: string, v: unknown) {
 
 const defaultPrefs: Prefs = { sfx: true, bgm: true, speed: 2 };
 
+/** 今の地図で続きを遊べるセーブか（地図を作りかえる前のセーブは使えない） */
+function fitsMap(g: GameState): boolean {
+  const ph = g.phase;
+  return (
+    g.players.every((p) => NODE[p.pos]) &&
+    !!NODE[g.destination] &&
+    !!NODE[g.prevDestination] &&
+    Object.keys(g.owner).every((id) => PROP[id]) &&
+    (ph.t !== 'buy' || !!NODE[ph.station]) &&
+    (ph.t !== 'moving' || ((ph.prev === null || !!NODE[ph.prev]) && (!ph.options || ph.options.every((o) => NODE[o]))))
+  );
+}
+
 function loadSave(): GameState | null {
   const g = load<GameState>(SAVE_KEY);
-  return g && g.version === 1 && g.phase.t !== 'gameOver' ? g : null;
+  if (!g || g.version !== 1 || g.phase.t === 'gameOver') return null;
+  if (!fitsMap(g)) {
+    save(SAVE_KEY, null);
+    return null;
+  }
+  return g;
 }
 
 interface AppState {

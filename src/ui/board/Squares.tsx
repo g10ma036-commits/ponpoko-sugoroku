@@ -2,6 +2,7 @@
 import { memo } from 'react';
 import { NODES, REGIONS } from '../../data/map';
 import { PROPS_BY_STATION } from '../../data/properties';
+import { getLabels } from './labels';
 
 export const SQUARE_STYLE: Record<string, { fill: string; label: string; name: string }> = {
   plus: { fill: '#3d8bdb', label: '＋', name: 'ふくマス' },
@@ -20,14 +21,8 @@ interface Props {
 const squares = NODES.filter((n) => n.kind !== 'station');
 const stations = NODES.filter((n) => n.kind === 'station');
 
-/** 駅名を上と下のどちらに出すか（近くのマスが少ないほう） */
-const LABEL_BELOW: Record<string, boolean> = {};
-for (const st of stations) {
-  const w = (st.name?.length ?? 0) * 21 + 22;
-  const crowd = (sign: number) =>
-    NODES.filter((n) => n.id !== st.id && Math.abs(n.x - st.x) < w / 2 + 22 && (n.y - st.y) * sign > 25 && (n.y - st.y) * sign < 100).length;
-  LABEL_BELOW[st.id] = crowd(1) <= crowd(-1);
-}
+/** 目的地の旗の位置（札と反対側） */
+const FLAG_AT = { below: 'translate(18 -30)', above: 'translate(30 10)', right: 'translate(-22 -30)', left: 'translate(18 -30)' };
 
 export const Squares = memo(function Squares({ owner, colors, destination }: Props) {
   return (
@@ -48,8 +43,8 @@ export const Squares = memo(function Squares({ owner, colors, destination }: Pro
         const props = PROPS_BY_STATION[n.id];
         const isDest = n.id === destination;
         const label = n.name ?? '';
-        const w = label.length * 21 + 22;
-        const below = LABEL_BELOW[n.id];
+        const lp = getLabels()[n.id];
+        const w = lp.w;
         return (
           <g key={n.id} data-node={n.id} className="tappable" transform={`translate(${n.x} ${n.y})`}>
             {isDest && (
@@ -61,21 +56,21 @@ export const Squares = memo(function Squares({ owner, colors, destination }: Pro
             <path d="M-13,10 L-13,-3 L0,-13 L13,-3 L13,10 Z" fill={isDest ? '#ff6b6b' : '#f29a4a'} stroke="#4a3426" strokeWidth={2.5} strokeLinejoin="round" />
             <rect x={-4} y={1} width={8} height={9} fill="#fff" stroke="#4a3426" strokeWidth={2} />
             {/* 名前 */}
-            <g transform={`translate(0 ${below ? 50 : -48})`}>
+            <g transform={`translate(${lp.dx} ${lp.dy})`}>
               <rect x={-w / 2} y={-17} width={w} height={32} rx={16} fill={isDest ? '#ff5a5a' : '#ffffff'} stroke="#4a3426" strokeWidth={2.5} />
               <text className="st-label" y={7} fill={isDest ? '#fff' : '#4a3426'}>
                 {label}
               </text>
             </g>
             {/* 持ち主の点 */}
-            <g transform={`translate(${-(props.length - 1) * 7} ${below ? 75 : -73})`}>
+            <g transform={`translate(${-(props.length - 1) * 7} ${lp.dotsDy})`}>
               {props.map((p, i) => {
                 const o = owner[p.id];
                 return <circle key={p.id} cx={i * 14} r={5.5} fill={o === undefined ? '#ffffff' : colors[o]} stroke="#4a3426" strokeWidth={2} />;
               })}
             </g>
             {isDest && (
-              <g transform={below ? 'translate(18 -30)' : 'translate(30 10)'} >
+              <g transform={FLAG_AT[lp.side]}>
                 <g className="dest-flag">
                 <path d="M0,0 L0,-46" stroke="#4a3426" strokeWidth={4} strokeLinecap="round" />
                 <path d="M0,-46 L30,-38 L0,-28 Z" fill="#ff5a5a" stroke="#4a3426" strokeWidth={2.5} strokeLinejoin="round" />
