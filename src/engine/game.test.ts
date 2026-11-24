@@ -3,7 +3,7 @@ import { NODE } from '../data/map';
 import { PROPS_BY_STATION } from '../data/properties';
 import { decide } from './ai';
 import { assets, createGame, income, reduce, yearlyIncome } from './game';
-import { ADJ, dist } from './graph';
+import { ADJ, dist, reachableEnds } from './graph';
 import type { Action, GameState } from './types';
 
 const cfg = (seed = 42, n = 2) => ({
@@ -174,6 +174,80 @@ describe('ゲームの進行', () => {
     expect(s.phase.t).toBe('gameOver');
     expect(sawSettlement).toBe(true);
     expect(assets(s, 0)).toBeGreaterThan(0);
+  });
+});
+
+describe('止まれるマス', () => {
+  /** サイコロをふった直後の状態から、移動を最後まで進めて止まったマスを返す（分かれ道は choose で選ぶ） */
+  const finish = (s: GameState, choose: (opts: string[]) => string) => {
+    const mover = s.turn;
+    let usedDir = false;
+    while (s.phase.t === 'moving' && s.turn === mover) {
+      if (s.queue.length) s = act(s, { t: 'ACK' });
+      else if (s.phase.options) {
+        usedDir = true;
+        s = act(s, { t: 'DIR', to: choose(s.phase.options) });
+      } else s = act(s, { t: 'STEP' });
+    }
+    return { pos: s.players[mover].pos, usedDir };
+  };
+  /** 分かれ道の選び方をすべて試して、止まれるマスを集める */
+  const bruteForce = (s: GameState): Set<string> => {
+    const out = new Set<string>();
+    const walk = (st: GameState) => {
+      const mover = st.turn;
+      while (st.phase.t === 'moving' && st.turn === mover && !st.phase.options) {
+        st = st.queue.length ? act(st, { t: 'ACK' }) : act(st, { t: 'STEP' });
+      }
+      if (st.phase.t === 'moving' && st.turn === mover && st.phase.options) {
+        for (const o of st.phase.options) walk(act(st, { t: 'DIR', to: o }));
+      } else out.add(st.players[mover].pos);
+    };
+    walk(s);
+    return out;
+  };
+  const rolledAt = (seed: number, pos: string, steps: number) => {
+    let s = ackAll(createGame(cfg(seed, 3)));
+    s = structuredClone(s);
+    s.players[s.turn].pos = pos;
+    s = act(s, { t: 'ROLL' });
+    if (s.phase.t !== 'moving') throw new Error('not moving');
+    s.phase.steps = steps;
+    return s;
+  };
+
+  it('計算した「止まれるマス」が、分かれ道の選び方を全部ためした結果と一致する', () => {
+    const ids = Object.keys(NODE);
+    for (let i = 0; i < 40; i++) {
+      const pos = ids[(i * 37) % ids.length];
+      const steps = (i % 12) + 1;
+      const s = rolledAt(500 + i, pos, steps);
+      if (s.phase.t !== 'moving') throw new Error();
+      const ends = reachableEnds(pos, s.phase.prev, steps, s.destination);
+      expect([...ends].sort(), `${pos} から ${steps}マス`).toEqual([...bruteForce(s)].sort());
+    }
+  });
+
+  it('止まれるマスを選ぶと、分かれ道で止まらずにそのマスまで進む', () => {
+    const ids = Object.keys(NODE);
+    for (let i = 0; i < 30; i++) {
+      const pos = ids[(i * 53) % ids.length];
+      const s = rolledAt(900 + i, pos, (i % 15) + 3);
+      if (s.phase.t !== 'moving') throw new Error();
+      for (const goal of reachableEnds(pos, s.phase.prev, s.phase.steps, s.destination)) {
+        const r = finish(act(s, { t: 'GOAL', to: goal }), (o) => o[0]);
+        expect(r.pos).toBe(goal);
+        expect(r.usedDir).toBe(false);
+      }
+    }
+  });
+
+  it('止まれないマスは選べない', () => {
+    const s = rolledAt(77, 'nigiwai', 4);
+    if (s.phase.t !== 'moving') throw new Error();
+    const ends = reachableEnds('nigiwai', s.phase.prev, 4, s.destination);
+    const bad = Object.keys(NODE).find((id) => !ends.has(id))!;
+    expect(reduce(s, { t: 'GOAL', to: bad })).toBe(s);
   });
 });
 

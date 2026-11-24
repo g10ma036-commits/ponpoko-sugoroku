@@ -116,6 +116,8 @@ export type Phase =
       options: string[] | null;
       /** これまで進んだ歩数（演出用） */
       walked: number;
+      /** 止まるマスを選んだときの行き先。分かれ道でも自動でそこへ向かう */
+      goal?: string;
     }
   | { t: 'buy'; station: string }
   | { t: 'shop'; items: CardId[] }
@@ -153,6 +155,7 @@ export type Action =
   | { t: 'USE_CARD'; index: number; num?: number; target?: number }
   | { t: 'STEP' }
   | { t: 'DIR'; to: string }
+  | { t: 'GOAL'; to: string }
   | { t: 'BUY'; prop: string }
   | { t: 'BUY_CARD'; card: CardId }
   | { t: 'SELL'; prop: string }

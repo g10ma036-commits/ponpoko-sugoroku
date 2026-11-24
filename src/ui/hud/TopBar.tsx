@@ -4,7 +4,7 @@ import { stationName } from '../../engine/game';
 import type { GameState } from '../../engine/types';
 import { CharFace, Money } from '../common';
 
-export function TopBar({ game, onPlayer }: { game: GameState; onPlayer: (id: number) => void }) {
+export function TopBar({ game, onPlayer, onDest }: { game: GameState; onPlayer: (id: number) => void; onDest: () => void }) {
   const p = game.players[game.turn];
   const monthsLeft = (game.years - game.year) * 12 + (12 - game.month) + 1;
   const d = dist(p.pos, game.destination);
@@ -14,11 +14,11 @@ export function TopBar({ game, onPlayer }: { game: GameState; onPlayer: (id: num
         <div className="date">
           <b>{game.year}</b>年目 <b>{game.month}</b>月<span className="left">のこり{monthsLeft}か月</span>
         </div>
-        <div className="dest">
+        <button type="button" className="dest" onClick={onDest} aria-label="おまつり会場の説明">
           <span className="dest-icon">🏮</span>
           <span className="dest-name">{stationName(game.destination)}</span>
           <span className="dest-d">あと{d}マス</span>
-        </div>
+        </button>
       </div>
       <div className="chips">
         {game.players.map((q) => (

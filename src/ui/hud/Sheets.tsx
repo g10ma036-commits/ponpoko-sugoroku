@@ -2,10 +2,27 @@ import { useState, type ReactNode } from 'react';
 import { sfx } from '../../audio/sound';
 import { CARDS, HAND_MAX } from '../../data/cards';
 import { CHARACTERS } from '../../data/characters';
+import { NODE, REGIONS } from '../../data/map';
 import { CATEGORY_LABEL, PROPS_BY_STATION } from '../../data/properties';
 import { formatRyo } from '../../engine/format';
-import { SELL_RATE, assets, income, isMonopoly, ownedProps, round100, stationName, yearlyIncome } from '../../engine/game';
+import {
+  FORTUNES,
+  MINUS_RANGE,
+  PLUS_RANGE,
+  SELL_RATE,
+  arrivalBonus,
+  assets,
+  income,
+  isMonopoly,
+  ownedProps,
+  round100,
+  stationName,
+  yearFactor,
+  yearlyIncome,
+} from '../../engine/game';
+import { dist } from '../../engine/graph';
 import type { Action, CardId, GameState, Property } from '../../engine/types';
+import { SQUARE_STYLE } from '../board/Squares';
 import { Btn, CharFace, Money, Sheet } from '../common';
 
 type Dispatch = (a: Action) => boolean;
@@ -224,6 +241,127 @@ export function CardSheet({ game, dispatch, onClose }: { game: GameState; dispat
           </div>
         );
       })}
+    </Sheet>
+  );
+}
+
+// ---------------------------------------------------------------- マスの説明（盤面のマスを押したとき）
+export function SquareSheet({ game, node, onClose }: { game: GameState; node: string; onClose: () => void }) {
+  const n = NODE[node];
+  const p = game.players[game.turn];
+  const d = dist(p.pos, node);
+  const yf = yearFactor(game.year);
+  const range = (r: readonly [number, number]) => `${formatRyo(round100(r[0] * 100 * yf))}〜${formatRyo(round100(r[1] * 100 * yf))}`;
+  const here = game.players.filter((q) => q.pos === node);
+  const st = n.kind === 'station' ? null : SQUARE_STYLE[n.kind];
+
+  let body: ReactNode;
+  if (n.kind === 'station') {
+    const props = PROPS_BY_STATION[node];
+    const owners = props.map((pr) => game.owner[pr.id]);
+    const monoOwner = owners.every((o) => o !== undefined && o === owners[0]) ? owners[0] : undefined;
+    const free = owners.filter((o) => o === undefined).length;
+    body = (
+      <>
+        {node === game.destination && (
+          <div className="hint good">
+            🏮 いまの おまつり会場！ 一番に着くと 賞金 <b>{formatRyo(arrivalBonus(game))}</b>
+          </div>
+        )}
+        <p className="sq-desc">止まると、この町の物件を買えるよ。物件は毎年12月の決算で 収益を生むんだ。</p>
+        <div className={`hint ${monoOwner !== undefined ? 'good' : ''}`}>
+          {monoOwner !== undefined
+            ? `🎉 ${game.players[monoOwner].name}さんの ひとりじめ（決算の収益が2倍）`
+            : `売り物 ${free}件 ・ 全部買うと「ひとりじめ」で収益2倍！`}
+        </div>
+        {props.map((pr) => {
+          const o = game.owner[pr.id];
+          const right =
+            o !== undefined ? (
+              <span className="owner" style={{ borderColor: CHARACTERS[game.players[o].charId].color }}>
+                <CharFace id={game.players[o].charId} size={26} />
+                {game.players[o].name}
+              </span>
+            ) : (
+              <span className="tag">売り物</span>
+            );
+          return <PropRow key={pr.id} pr={pr} right={right} />;
+        })}
+      </>
+    );
+  } else if (n.kind === 'plus') {
+    body = (
+      <>
+        <p className="sq-desc">止まると お金がもらえるよ。</p>
+        <div className="hint good">いまは {range(PLUS_RANGE)}（年がたつほど 多くなる）</div>
+      </>
+    );
+  } else if (n.kind === 'minus') {
+    body = (
+      <>
+        <p className="sq-desc">止まると お金をはらうことに…。</p>
+        <div className="hint">いまは {range(MINUS_RANGE)}（年がたつほど 多くなる）</div>
+        <p className="sq-note">
+          {CARDS.omamori.icon} 「{CARDS.omamori.name}」を持っていれば 1回ふせげるよ。お金がマイナスになったら、物件を売ってうめるんだ。
+        </p>
+      </>
+    );
+  } else if (n.kind === 'card') {
+    body = (
+      <p className="sq-desc">
+        止まると カードが1枚もらえるよ。手札は{HAND_MAX}枚まで持てる。カードは、サイコロをふる前に「🃏 カード」から使えるよ。
+      </p>
+    );
+  } else if (n.kind === 'shop') {
+    body = <p className="sq-desc">止まると カード屋さんで カードを買えるよ。毎回5種類が ならぶんだ。</p>;
+  } else {
+    const total = FORTUNES.reduce((a, f) => a + f.w, 0);
+    body = (
+      <>
+        <p className="sq-desc">止まると おみくじを引くよ。</p>
+        <div className="fortunes">
+          {FORTUNES.map((f) => (
+            <div key={f.name} className="fortune-row">
+              <b>{f.name}</b>
+              <span>{f.help}</span>
+              <span className="pct">{Math.round((f.w / total) * 100)}%</span>
+            </div>
+          ))}
+        </div>
+        <p className="sq-note">☁️ 吉・中吉・大吉が出ると、くもすけを おはらいできるよ。</p>
+      </>
+    );
+  }
+
+  return (
+    <Sheet
+      title={
+        <span className="ps-title">
+          {st ? (
+            <span className="sq-dot" style={{ background: st.fill }}>
+              {st.label}
+            </span>
+          ) : (
+            <span className="sq-dot station">駅</span>
+          )}
+          {n.kind === 'station' ? n.name : st!.name}
+          {n.kind === 'station' && <span className="tag">{REGIONS[n.region].name}</span>}
+        </span>
+      }
+      onClose={onClose}
+    >
+      {body}
+      <div className="sq-where">
+        {d === 0 ? `${p.name}さんが いまいるマス` : `${p.name}さんの いる場所から ${d}マス`}
+        {here.length > 0 && (
+          <span className="sq-here">
+            ここにいる人：
+            {here.map((q) => (
+              <CharFace key={q.id} id={q.charId} size={24} />
+            ))}
+          </span>
+        )}
+      </div>
     </Sheet>
   );
 }

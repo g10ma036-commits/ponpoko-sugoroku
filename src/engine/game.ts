@@ -6,7 +6,7 @@ import { CHARACTERS } from '../data/characters';
 import { NODE, START_STATION, STATION_IDS } from '../data/map';
 import { PROP, PROPS_BY_STATION } from '../data/properties';
 import { formatRyo } from './format';
-import { dist, nextOptions } from './graph';
+import { dist, nextOptions, reachableEnds, stepToward } from './graph';
 import { newSeed, pick, pickWeighted, rand, randInt } from './rng';
 import type { Action, CardId, GameConfig, GameState, Msg, Player, Property, SettlementRow } from './types';
 
@@ -18,6 +18,9 @@ export const SELL_RATE = 0.7;
 
 export const yearFactor = (year: number) => 1 + 0.3 * (year - 1);
 export const round100 = (n: number) => Math.round(n / 100) * 100;
+/** ふくマス・とほほマスの金額（100両単位。年がたつと yearFactor 倍になる） */
+export const PLUS_RANGE = [8, 20] as const;
+export const MINUS_RANGE = [6, 16] as const;
 export const income = (p: Property) => Math.round((p.price * p.rate * INCOME_SCALE) / 100 / 10) * 10;
 
 export const cur = (s: GameState): Player => s.players[s.turn];
@@ -148,7 +151,14 @@ function apply(s: GameState, a: Action): boolean {
 
     case 'moving':
       if (a.t === 'STEP' && ph.options === null && ph.steps > 0) {
-        stepTo(s, nextOptions(p.pos, ph.prev)[0]);
+        const toward = ph.goal ? stepToward(p.pos, ph.prev, ph.steps, s.destination, ph.goal) : null;
+        stepTo(s, toward ?? nextOptions(p.pos, ph.prev)[0]);
+        return true;
+      }
+      // 止まれるマスを選ぶと、そこまで分かれ道も自動で進む
+      if (a.t === 'GOAL' && ph.steps > 0 && reachableEnds(p.pos, ph.prev, ph.steps, s.destination).has(a.to)) {
+        ph.goal = a.to;
+        ph.options = null;
         return true;
       }
       if (a.t === 'DIR' && ph.options?.includes(a.to)) {
@@ -220,8 +230,10 @@ function startMove(s: GameState, diceCount: number, forced?: number) {
 function refreshOptions(s: GameState) {
   const ph = s.phase;
   if (ph.t !== 'moving') return;
-  const opts = nextOptions(cur(s).pos, ph.prev);
-  ph.options = opts.length > 1 ? opts : null;
+  const p = cur(s);
+  if (ph.goal && !stepToward(p.pos, ph.prev, ph.steps, s.destination, ph.goal)) ph.goal = undefined;
+  const opts = nextOptions(p.pos, ph.prev);
+  ph.options = opts.length > 1 && !ph.goal ? opts : null;
 }
 
 function stepTo(s: GameState, to: string) {
@@ -289,14 +301,14 @@ function land(s: GameState) {
       s.phase = { t: 'buy', station: node.id };
       return;
     case 'plus': {
-      const amt = round100(randInt(s, 8, 20) * 100 * yf);
+      const amt = round100(randInt(s, PLUS_RANGE[0], PLUS_RANGE[1]) * 100 * yf);
       p.money += amt;
       s.queue.push({ tone: 'good', title: 'ふくマス', text: `${formatRyo(amt)} もらった！`, speaker: p.charId, expr: 'happy', player: p.id, delta: amt });
       s.phase = { t: 'end' };
       return;
     }
     case 'minus': {
-      const amt = round100(randInt(s, 6, 16) * 100 * yf);
+      const amt = round100(randInt(s, MINUS_RANGE[0], MINUS_RANGE[1]) * 100 * yf);
       if (useOmamori(s, p, 'とほほマス')) {
         s.phase = { t: 'end' };
         return;
@@ -362,12 +374,12 @@ function checkDebt(s: GameState, next: 'action' | 'end') {
   }
 }
 
-const FORTUNES = [
-  { name: '大吉', w: 10 },
-  { name: '中吉', w: 20 },
-  { name: '吉', w: 30 },
-  { name: '小吉', w: 20 },
-  { name: '凶', w: 20 },
+export const FORTUNES = [
+  { name: '大吉', w: 10, help: 'お金が たくさんもらえる' },
+  { name: '中吉', w: 20, help: 'お金と カード1枚' },
+  { name: '吉', w: 30, help: 'お金がもらえる' },
+  { name: '小吉', w: 20, help: 'お金が ちょっぴりもらえる' },
+  { name: '凶', w: 20, help: 'お金を はらう' },
 ];
 
 function omikuji(s: GameState) {
@@ -411,12 +423,16 @@ function omikuji(s: GameState) {
   }
 }
 
+/** いまのおまつり会場に一番に着いたときの賞金（8月は2倍） */
+export function arrivalBonus(s: GameState): number {
+  const d = Math.max(dist(s.prevDestination, s.destination), 6);
+  return round100((5000 + 250 * d) * yearFactor(s.year)) * (s.month === 8 ? 2 : 1);
+}
+
 function arrive(s: GameState) {
   const p = cur(s);
-  const yf = yearFactor(s.year);
-  const d = Math.max(dist(s.prevDestination, s.destination), 6);
   const summer = s.month === 8 ? 2 : 1;
-  const bonus = round100((5000 + 250 * d) * yf) * summer;
+  const bonus = arrivalBonus(s);
   p.money += bonus;
   p.arrivals++;
   s.queue.push({

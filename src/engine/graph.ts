@@ -40,3 +40,37 @@ export function nextOptions(pos: string, prev: string | null): string[] {
   const opts = all.filter((n) => n !== prev);
   return opts.length > 0 ? opts : all;
 }
+
+/**
+ * あと steps マス進んだときに止まれるマスの一覧。
+ * 移動のルールは nextOptions と同じで、stopAt（おまつり会場）を通ったらそこで止まる。
+ */
+export function reachableEnds(pos: string, prev: string | null, steps: number, stopAt: string): Set<string> {
+  if (steps <= 0) return new Set([pos]);
+  const memo = new Map<string, Set<string>>();
+  const go = (at: string, from: string | null, left: number): Set<string> => {
+    const key = `${at}|${from}|${left}`;
+    let r = memo.get(key);
+    if (r) return r;
+    r = new Set();
+    for (const o of nextOptions(at, from)) {
+      if (o === stopAt || left === 1) r.add(o);
+      else for (const e of go(o, at, left - 1)) r.add(e);
+    }
+    memo.set(key, r);
+    return r;
+  };
+  return go(pos, prev, steps);
+}
+
+/** goal に止まるために、次に進むマス（行けないなら null） */
+export function stepToward(pos: string, prev: string | null, steps: number, stopAt: string, goal: string): string | null {
+  for (const o of nextOptions(pos, prev)) {
+    if (o === stopAt || steps === 1) {
+      if (o === goal) return o;
+    } else if (reachableEnds(o, pos, steps - 1, stopAt).has(goal)) {
+      return o;
+    }
+  }
+  return null;
+}

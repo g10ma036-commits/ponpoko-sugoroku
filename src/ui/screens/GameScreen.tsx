@@ -1,17 +1,18 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { sfx } from '../../audio/sound';
 import { CharSvg } from '../../characters/Characters';
 import { CHARACTERS } from '../../data/characters';
 import { PROP } from '../../data/properties';
 import { decide } from '../../engine/ai';
 import { stationName } from '../../engine/game';
+import { reachableEnds } from '../../engine/graph';
 import type { GameState, Msg } from '../../engine/types';
 import { useApp } from '../../store/gameStore';
 import { Board } from '../board/Board';
 import { Btn, CharFace, Sheet } from '../common';
 import { DiceOverlay } from '../hud/DiceOverlay';
 import { MessageDialog } from '../hud/MessageDialog';
-import { BuySheet, CardSheet, PlayerSheet, SellSheet, ShopSheet } from '../hud/Sheets';
+import { BuySheet, CardSheet, PlayerSheet, SellSheet, ShopSheet, SquareSheet } from '../hud/Sheets';
 import { TopBar } from '../hud/TopBar';
 import { ResultScreen } from './ResultScreen';
 
@@ -35,7 +36,7 @@ export function GameScreen() {
   const setPrefs = useApp((s) => s.setPrefs);
 
   const [overview, setOverview] = useState(false);
-  const [sheet, setSheet] = useState<null | 'cards' | 'menu' | { player: number }>(null);
+  const [sheet, setSheet] = useState<null | 'cards' | 'menu' | { player: number } | { node: string }>(null);
   const [handoffDone, setHandoffDone] = useState<string | null>(null);
   const [toasts, setToasts] = useState<{ id: number; text: string; color: string }[]>([]);
 
@@ -48,10 +49,19 @@ export function GameScreen() {
   const speed = fastForward && p.isCpu ? 5 : SPEED[prefs.speed];
   const humanTurn = !p.isCpu && !msg && !needHandoff;
   const gameOver = ph.t === 'gameOver' && !msg;
+  // 説明やメニューを見ているあいだは、人間の番を止めておく
+  const paused = sheet !== null && !p.isCpu;
+
+  // 人間の移動中は、止まれるマスを計算して光らせる
+  const moveKey = ph.t === 'moving' && !p.isCpu && ph.steps > 0 ? `${p.pos}|${ph.prev}|${ph.steps}|${game.destination}` : '';
+  const ends = useMemo(() => {
+    if (!moveKey || ph.t !== 'moving') return [];
+    return [...reachableEnds(p.pos, ph.prev, ph.steps, game.destination)];
+  }, [moveKey]);
 
   // ---- ゲームを自動で進める（CPUの考え、1マスずつの移動、メッセージの自動送り）
   useEffect(() => {
-    if (gameOver) return;
+    if (gameOver || paused) return;
     let t: number | undefined;
     if (msg) {
       if (isAuto(game, msg)) t = window.setTimeout(() => dispatch({ t: 'ACK' }), (msg.settlement ? 3200 : 1500) / speed);
@@ -64,7 +74,7 @@ export function GameScreen() {
       }
     }
     return () => window.clearTimeout(t);
-  }, [game, msg, needHandoff, speed, dispatch, p.isCpu, ph, gameOver]);
+  }, [game, msg, needHandoff, speed, dispatch, p.isCpu, ph, gameOver, paused]);
 
   // ---- 1マス進むたびに音、CPUが物件を買ったらお知らせ
   const prev = useRef(game);
@@ -93,16 +103,30 @@ export function GameScreen() {
 
   return (
     <div className="game">
-      <TopBar game={game} onPlayer={(id) => setSheet({ player: id })} />
+      <TopBar game={game} onPlayer={(id) => setSheet({ player: id })} onDest={() => setSheet({ node: game.destination })} />
       <div className="board-wrap">
         <Board
           game={game}
           overview={overview}
           canChoose={humanTurn}
+          ends={ends}
           onChoose={(to) => {
             if (dispatch({ t: 'DIR', to })) sfx.step();
           }}
-          onExitOverview={() => setOverview(false)}
+          onGoal={(to) => {
+            if (dispatch({ t: 'GOAL', to })) {
+              sfx.card();
+              setOverview(false);
+            }
+          }}
+          onInspect={(node) => {
+            sfx.tap();
+            setSheet({ node });
+          }}
+          onPlayer={(id) => {
+            sfx.tap();
+            setSheet({ player: id });
+          }}
         />
         <BoardTools overview={overview} onOverview={() => setOverview((v) => !v)} onMenu={() => setSheet('menu')} />
         <div className="toasts">
@@ -117,6 +141,7 @@ export function GameScreen() {
       <ActionBar
         game={game}
         humanTurn={humanTurn}
+        ends={ends.length}
         fastForward={fastForward}
         onRoll={() => dispatch({ t: 'ROLL' })}
         onCards={() => setSheet('cards')}
@@ -130,7 +155,8 @@ export function GameScreen() {
       {humanTurn && ph.t === 'shop' && <ShopSheet game={game} items={ph.items} dispatch={dispatch} />}
       {humanTurn && ph.t === 'sell' && <SellSheet game={game} dispatch={dispatch} />}
       {humanTurn && ph.t === 'action' && sheet === 'cards' && <CardSheet game={game} dispatch={dispatch} onClose={() => setSheet(null)} />}
-      {sheet && typeof sheet === 'object' && !msg && <PlayerSheet game={game} player={sheet.player} onClose={() => setSheet(null)} />}
+      {sheet && typeof sheet === 'object' && 'player' in sheet && !msg && <PlayerSheet game={game} player={sheet.player} onClose={() => setSheet(null)} />}
+      {sheet && typeof sheet === 'object' && 'node' in sheet && !msg && <SquareSheet game={game} node={sheet.node} onClose={() => setSheet(null)} />}
       {sheet === 'menu' && (
         <Sheet title="メニュー" onClose={() => setSheet(null)}>
           <div className="menu-list">
@@ -168,13 +194,15 @@ export function GameScreen() {
 interface ActionBarProps {
   game: GameState;
   humanTurn: boolean;
+  /** 止まれるマスの数 */
+  ends: number;
   fastForward: boolean;
   onRoll: () => void;
   onCards: () => void;
   onFast: () => void;
 }
 
-function ActionBar({ game, humanTurn, fastForward, onRoll, onCards, onFast }: ActionBarProps) {
+function ActionBar({ game, humanTurn, ends, fastForward, onRoll, onCards, onFast }: ActionBarProps) {
   const p = game.players[game.turn];
   const ph = game.phase;
   const color = CHARACTERS[p.charId].color;
@@ -201,7 +229,24 @@ function ActionBar({ game, humanTurn, fastForward, onRoll, onCards, onFast }: Ac
       </div>
     );
   } else if (ph.t === 'moving') {
-    center = <div className="ab-status big">{ph.options && humanTurn ? '👆 矢印で すすむ道をえらんでね' : `のこり ${ph.steps} マス`}</div>;
+    let sub: string | null = null;
+    let main = `のこり ${ph.steps} マス`;
+    if (humanTurn && ph.goal) {
+      main = `🚩 えらんだマスへ すすみ中（のこり ${ph.steps}）`;
+    } else if (humanTurn && ph.options) {
+      main = '✨ 光るマスを押すと 一気に進むよ';
+      sub = '矢印で 1マスずつ 道をえらんでもOK';
+    } else if (humanTurn && ends > 1) {
+      sub = '✨ 光るマスを押すと そこまで一気に進むよ';
+    }
+    center = (
+      <div className="ab-status big">
+        <span>
+          {main}
+          {sub && <span className="ab-sub">{sub}</span>}
+        </span>
+      </div>
+    );
   } else if (ph.t === 'buy') {
     center = <div className="ab-status">{stationName(ph.station)}で 物件を見ています</div>;
   } else {

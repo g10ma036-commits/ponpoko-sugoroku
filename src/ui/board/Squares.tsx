@@ -35,7 +35,7 @@ export const Squares = memo(function Squares({ owner, colors, destination }: Pro
       {squares.map((n) => {
         const st = SQUARE_STYLE[n.kind];
         return (
-          <g key={n.id} transform={`translate(${n.x} ${n.y})`}>
+          <g key={n.id} data-node={n.id} className="tappable" transform={`translate(${n.x} ${n.y})`}>
             <circle r={21} fill="#4a3426" opacity={0.25} cy={3} />
             <circle r={20} fill={st.fill} stroke="#fff" strokeWidth={4} />
             <text className="sq-label" y={7.5}>
@@ -51,7 +51,7 @@ export const Squares = memo(function Squares({ owner, colors, destination }: Pro
         const w = label.length * 21 + 22;
         const below = LABEL_BELOW[n.id];
         return (
-          <g key={n.id} transform={`translate(${n.x} ${n.y})`}>
+          <g key={n.id} data-node={n.id} className="tappable" transform={`translate(${n.x} ${n.y})`}>
             {isDest && (
               <circle r={44} className="dest-ring" fill="none" stroke="#ff5a5a" strokeWidth={6} />
             )}
