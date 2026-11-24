@@ -84,6 +84,14 @@ export const sfx = {
       [72, 76, 79, 84].forEach((n, i) => tone(midi(n), i * 0.11, 0.18, 'square', 0.08));
       [72, 76, 79, 84].forEach((n) => tone(midi(n), 0.5, 0.8, 'triangle', 0.07));
     }),
+  horn: () =>
+    play(() => {
+      // ボーッ、ボーッ（フェリーの汽笛）
+      for (const at of [0, 0.75]) {
+        tone(147, at, 0.6, 'sawtooth', 0.045);
+        tone(185, at, 0.6, 'triangle', 0.08);
+      }
+    }),
   event: () =>
     play(() => {
       tone(midi(74), 0, 0.1, 'triangle', 0.12);

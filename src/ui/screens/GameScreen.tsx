@@ -8,11 +8,11 @@ import { stationName } from '../../engine/game';
 import { reachableEnds } from '../../engine/graph';
 import type { GameState, Msg } from '../../engine/types';
 import { useApp } from '../../store/gameStore';
-import { Board } from '../board/Board';
+import { Board, type VoyageInfo } from '../board/Board';
 import { Btn, CharFace, Sheet } from '../common';
 import { DiceOverlay } from '../hud/DiceOverlay';
 import { MessageDialog } from '../hud/MessageDialog';
-import { BuySheet, CardSheet, PlayerSheet, SellSheet, ShopSheet, SquareSheet } from '../hud/Sheets';
+import { BuySheet, CardSheet, FerrySheet, PlayerSheet, SellSheet, ShopSheet, SquareSheet } from '../hud/Sheets';
 import { TopBar } from '../hud/TopBar';
 import { ResultScreen } from './ResultScreen';
 
@@ -36,7 +36,9 @@ export function GameScreen() {
   const setPrefs = useApp((s) => s.setPrefs);
 
   const [overview, setOverview] = useState(false);
-  const [sheet, setSheet] = useState<null | 'cards' | 'menu' | { player: number } | { node: string }>(null);
+  // node の go が true なら「光るマス」を押したとき（そこへ行くか聞く）
+  const [sheet, setSheet] = useState<null | 'cards' | 'menu' | { player: number } | { node: string; go?: boolean }>(null);
+  const [voyage, setVoyage] = useState<VoyageInfo | null>(null);
   const [handoffDone, setHandoffDone] = useState<string | null>(null);
   const [toasts, setToasts] = useState<{ id: number; text: string; color: string }[]>([]);
 
@@ -61,7 +63,7 @@ export function GameScreen() {
 
   // ---- ゲームを自動で進める（CPUの考え、1マスずつの移動、メッセージの自動送り）
   useEffect(() => {
-    if (gameOver || paused) return;
+    if (gameOver || paused || voyage) return;
     let t: number | undefined;
     if (msg) {
       if (isAuto(game, msg)) t = window.setTimeout(() => dispatch({ t: 'ACK' }), (msg.settlement ? 3200 : 1500) / speed);
@@ -74,7 +76,7 @@ export function GameScreen() {
       }
     }
     return () => window.clearTimeout(t);
-  }, [game, msg, needHandoff, speed, dispatch, p.isCpu, ph, gameOver, paused]);
+  }, [game, msg, needHandoff, speed, dispatch, p.isCpu, ph, gameOver, paused, voyage]);
 
   // ---- 1マス進むたびに音、CPUが物件を買ったらお知らせ
   const prev = useRef(game);
@@ -84,6 +86,13 @@ export function GameScreen() {
     if (before === game) return;
     const bp = before.players[before.turn];
     if (game.phase.t === 'moving' && bp.id === p.id && bp.pos !== p.pos) sfx.step();
+    // フェリーに乗った → 船が航路をわたるあいだ、ゲームを止めておく
+    if (before.phase.t === 'ferry' && game.players[before.turn].pos !== bp.pos) {
+      const ms = 2600 / speed;
+      setVoyage({ player: bp.id, from: bp.pos, ms, key: Date.now() });
+      sfx.horn();
+      window.setTimeout(() => setVoyage(null), ms + 200);
+    }
     const bought = Object.keys(game.owner).filter((id) => before.owner[id] === undefined);
     if (bought.length > 0 && p.isCpu) {
       sfx.buy();
@@ -92,7 +101,7 @@ export function GameScreen() {
       setToasts((ts) => [...ts.slice(-2), { id, text, color: CHARACTERS[p.charId].color }]);
       window.setTimeout(() => setToasts((ts) => ts.filter((x) => x.id !== id)), 2200);
     }
-  }, [game, p]);
+  }, [game, p, speed]);
 
   // 手番が変わったら全体マップを閉じる
   useEffect(() => setOverview(false), [game.turn]);
@@ -114,10 +123,8 @@ export function GameScreen() {
             if (dispatch({ t: 'DIR', to })) sfx.step();
           }}
           onGoal={(to) => {
-            if (dispatch({ t: 'GOAL', to })) {
-              sfx.card();
-              setOverview(false);
-            }
+            sfx.tap();
+            setSheet({ node: to, go: true });
           }}
           onInspect={(node) => {
             sfx.tap();
@@ -127,6 +134,7 @@ export function GameScreen() {
             sfx.tap();
             setSheet({ player: id });
           }}
+          voyage={voyage}
         />
         <BoardTools overview={overview} onOverview={() => setOverview((v) => !v)} onMenu={() => setSheet('menu')} />
         <div className="toasts">
@@ -142,6 +150,7 @@ export function GameScreen() {
         game={game}
         humanTurn={humanTurn}
         ends={ends.length}
+        sailing={voyage !== null}
         fastForward={fastForward}
         onRoll={() => dispatch({ t: 'ROLL' })}
         onCards={() => setSheet('cards')}
@@ -154,9 +163,28 @@ export function GameScreen() {
       {humanTurn && ph.t === 'buy' && <BuySheet game={game} station={ph.station} dispatch={dispatch} />}
       {humanTurn && ph.t === 'shop' && <ShopSheet game={game} items={ph.items} dispatch={dispatch} />}
       {humanTurn && ph.t === 'sell' && <SellSheet game={game} dispatch={dispatch} />}
+      {humanTurn && ph.t === 'ferry' && !voyage && !sheet && <FerrySheet game={game} to={ph.to} dispatch={dispatch} />}
       {humanTurn && ph.t === 'action' && sheet === 'cards' && <CardSheet game={game} dispatch={dispatch} onClose={() => setSheet(null)} />}
       {sheet && typeof sheet === 'object' && 'player' in sheet && !msg && <PlayerSheet game={game} player={sheet.player} onClose={() => setSheet(null)} />}
-      {sheet && typeof sheet === 'object' && 'node' in sheet && !msg && <SquareSheet game={game} node={sheet.node} onClose={() => setSheet(null)} />}
+      {sheet && typeof sheet === 'object' && 'node' in sheet && !msg && (
+        <SquareSheet
+          game={game}
+          node={sheet.node}
+          onClose={() => setSheet(null)}
+          onGo={
+            sheet.go
+              ? () => {
+                  const to = sheet.node;
+                  setSheet(null);
+                  if (dispatch({ t: 'GOAL', to })) {
+                    sfx.card();
+                    setOverview(false);
+                  }
+                }
+              : undefined
+          }
+        />
+      )}
       {sheet === 'menu' && (
         <Sheet title="メニュー" onClose={() => setSheet(null)}>
           <div className="menu-list">
@@ -186,7 +214,7 @@ export function GameScreen() {
         </div>
       )}
 
-      {msg && <MessageDialog game={game} msg={msg} auto={isAuto(game, msg)} onNext={() => dispatch({ t: 'ACK' })} />}
+      {msg && !voyage && <MessageDialog game={game} msg={msg} auto={isAuto(game, msg)} onNext={() => dispatch({ t: 'ACK' })} />}
     </div>
   );
 }
@@ -196,19 +224,23 @@ interface ActionBarProps {
   humanTurn: boolean;
   /** 止まれるマスの数 */
   ends: number;
+  /** フェリーで移動中 */
+  sailing: boolean;
   fastForward: boolean;
   onRoll: () => void;
   onCards: () => void;
   onFast: () => void;
 }
 
-function ActionBar({ game, humanTurn, ends, fastForward, onRoll, onCards, onFast }: ActionBarProps) {
+function ActionBar({ game, humanTurn, ends, sailing, fastForward, onRoll, onCards, onFast }: ActionBarProps) {
   const p = game.players[game.turn];
   const ph = game.phase;
   const color = CHARACTERS[p.charId].color;
 
   let center: ReactNode;
-  if (p.isCpu) {
+  if (sailing) {
+    center = <div className="ab-status big">⛴ フェリーで 移動中…</div>;
+  } else if (p.isCpu) {
     center = (
       <div className="ab-status">
         <span className="thinking">{p.name}（CPU）の番</span>
@@ -249,6 +281,8 @@ function ActionBar({ game, humanTurn, ends, fastForward, onRoll, onCards, onFast
     );
   } else if (ph.t === 'buy') {
     center = <div className="ab-status">{stationName(ph.station)}で 物件を見ています</div>;
+  } else if (ph.t === 'ferry') {
+    center = <div className="ab-status big">⛴ フェリーに 乗る？</div>;
   } else {
     center = <div className="ab-status">…</div>;
   }

@@ -10,7 +10,22 @@ export const SQUARE_STYLE: Record<string, { fill: string; label: string; name: s
   card: { fill: '#f2b82e', label: '札', name: 'ふだマス' },
   shop: { fill: '#2fae86', label: '店', name: 'みせマス' },
   omikuji: { fill: '#b04fc4', label: '吉', name: 'おみくじマス' },
+  ferry: { fill: '#24467f', label: '船', name: 'フェリーマス' },
 };
+
+/** フェリーの絵（へさきが右）。航路の目印と、乗っているときのアニメーションに使う */
+export function Ship({ x = 0, y = 0, scale = 1, flip = false }: { x?: number; y?: number; scale?: number; flip?: boolean }) {
+  return (
+    <g transform={`translate(${x} ${y}) scale(${flip ? -scale : scale} ${scale})`}>
+      <rect x={1} y={-21} width={8} height={11} rx={1.5} fill="#e0524a" stroke="#24345a" strokeWidth={2.5} />
+      <rect x={-15} y={-11} width={24} height={12} rx={2.5} fill="#ffffff" stroke="#24345a" strokeWidth={2.5} />
+      <circle cx={-9} cy={-5} r={2.2} fill="#7cc6e6" />
+      <circle cx={-2} cy={-5} r={2.2} fill="#7cc6e6" />
+      <path d="M-25,1 L29,1 L19,15 L-20,15 Z" fill="#ffffff" stroke="#24345a" strokeWidth={3} strokeLinejoin="round" />
+      <path d="M-22,8 L24,8" stroke="#3d8bdb" strokeWidth={3.5} />
+    </g>
+  );
+}
 
 interface Props {
   owner: Record<string, number>;

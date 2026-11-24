@@ -3,7 +3,7 @@
 
 import { CARDS, CARD_IDS, HAND_MAX, SHOP_IDS } from '../data/cards';
 import { CHARACTERS } from '../data/characters';
-import { NODE, START_STATION, STATION_IDS } from '../data/map';
+import { FERRY, NODE, REGIONS, START_STATION, STATION_IDS } from '../data/map';
 import { PROP, PROPS_BY_STATION } from '../data/properties';
 import { formatRyo } from './format';
 import { dist, nextOptions, reachableEnds, stepToward } from './graph';
@@ -26,6 +26,18 @@ export const income = (p: Property) => Math.round((p.price * p.rate * INCOME_SCA
 export const cur = (s: GameState): Player => s.players[s.turn];
 export const nameOf = (s: GameState, id: number) => s.players[id].name;
 export const stationName = (id: string) => NODE[id]?.name ?? id;
+
+/** いちばん近い駅（マス数で数える） */
+export function nearestStation(id: string): string {
+  let best = STATION_IDS[0];
+  for (const st of STATION_IDS) if (dist(id, st) < dist(id, best)) best = st;
+  return best;
+}
+/** フェリーの乗り場の場所（「関東の なっとう町のそば」） */
+export function ferryPlace(id: string): string {
+  const st = nearestStation(id);
+  return `${REGIONS[NODE[st].region].name}の ${NODE[st].name}のそば`;
+}
 
 export function ownedProps(s: GameState, player: number): Property[] {
   return Object.entries(s.owner)
@@ -175,6 +187,17 @@ function apply(s: GameState, a: Action): boolean {
 
     case 'buy':
       if (a.t === 'BUY') return buyProperty(s, a.prop, ph.station);
+      if (a.t === 'DONE') {
+        s.phase = { t: 'end' };
+        return true;
+      }
+      return false;
+
+    case 'ferry':
+      if (a.t === 'RIDE') {
+        rideFerry(s, ph.to);
+        return true;
+      }
       if (a.t === 'DONE') {
         s.phase = { t: 'end' };
         return true;
@@ -345,7 +368,20 @@ function land(s: GameState) {
     case 'omikuji':
       omikuji(s);
       return;
+    case 'ferry':
+      s.phase = { t: 'ferry', to: FERRY[node.id] };
+      return;
   }
+}
+
+/** フェリーで相手の乗り場まで一気に行く（そこで手番はおわり） */
+function rideFerry(s: GameState, to: string) {
+  const p = cur(s);
+  p.pos = to;
+  log(s, `${p.name}はフェリーで${ferryPlace(to)}へ`);
+  s.queue.push({ tone: 'good', title: '⛴ フェリー', text: `${ferryPlace(to)}に 着いた！`, speaker: p.charId, expr: 'happy', player: p.id });
+  checkKumoContact(s, to);
+  s.phase = { t: 'end' };
 }
 
 const MINUS_REASONS = [

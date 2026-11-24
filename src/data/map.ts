@@ -2,6 +2,7 @@
 // あいだのマスは道の長さに合わせて自動で並ぶ。
 // 座標は japan.ts の島の輪郭と同じ地図の座標（左上が 0,0）。
 //   + ふくマス  - とほほマス  c ふだマス  s みせマス  o おみくじマス
+// フェリーマスは FERRY_DEFS で、自動で並んだマスの中から選んで置く。
 
 import type { MapEdge, MapNode, RegionId, SquareKind } from '../engine/types';
 import { MAP_H, MAP_W } from './japan';
@@ -280,9 +281,43 @@ function build(): { nodes: MapNode[]; edges: MapEdge[] } {
   return { nodes, edges };
 }
 
+/**
+ * フェリー：乗り場のマスに止まると、相手の乗り場まで一気に行ける（乗るかどうかは選べる）。
+ * [乗り場のマスA, 乗り場のマスB, あいだの海の上の通り道（A から B の順）]
+ */
+export const FERRY_DEFS: [string, string, [number, number][]][] = [
+  // 北海道（東）↔ 関東：太平洋まわり
+  ['koori~bokujo~1', 'natto~nigiwai~0', [[2600, 950], [2640, 1080], [2560, 1350], [2440, 1650], [2420, 1900], [2360, 2200], [2300, 2420], [2218, 2491]]],
+  // 北海道（西）↔ 中部（北陸）：日本海まわり
+  ['shirokuma~lavender~1', 'okome~kinpaku~5', [[2031, 427], [1940, 480], [1740, 720], [1680, 1000], [1760, 1300], [1800, 1600], [1820, 1880], [1790, 2000], [1700, 2090], [1590, 2160], [1535, 2225]]],
+  // 近畿（紀伊）↔ 九州（東）
+  ['kuidaore~umeboshi~0', 'jigoku~yashi~2', [[1275, 2914], [1220, 2990], [1150, 3120], [1000, 3230], [820, 3260], [715, 3195], [655, 3118]]],
+  // 中部（東海）↔ 沖縄
+  ['akarenga~ocha~0', 'kemuri~satokibi~4', [[1887, 2742], [1895, 2800], [1900, 2880], [1870, 2990], [1600, 3250], [1100, 3420], [750, 3560], [560, 3610]]],
+];
+
 const built = build();
+for (const [a, b] of FERRY_DEFS) {
+  for (const id of [a, b]) {
+    const n = built.nodes.find((x) => x.id === id);
+    if (!n || n.kind === 'station') throw new Error(`フェリーの乗り場 ${id} が見つからない`);
+    n.kind = 'ferry';
+  }
+}
 export const NODES: MapNode[] = built.nodes;
 export const EDGES: MapEdge[] = built.edges;
 export const NODE: Record<string, MapNode> = Object.fromEntries(NODES.map((n) => [n.id, n]));
 export const STATION_IDS: string[] = STATIONS.map((s) => s.id);
 export const START_STATION = 'nigiwai';
+
+/** フェリーの乗り場 → 相手の乗り場 */
+export const FERRY: Record<string, string> = Object.fromEntries(FERRY_DEFS.flatMap(([a, b]) => [[a, b], [b, a]]));
+
+/** 航路の点（乗り場のマスから、相手の乗り場のマスまで） */
+export function ferryRoute(from: string): [number, number][] {
+  const def = FERRY_DEFS.find(([a, b]) => a === from || b === from);
+  if (!def) return [];
+  const [a, b, via] = def;
+  const pts: [number, number][] = [[NODE[a].x, NODE[a].y], ...via, [NODE[b].x, NODE[b].y]];
+  return a === from ? pts : pts.reverse();
+}

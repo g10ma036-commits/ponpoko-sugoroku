@@ -1,14 +1,25 @@
 // 盤面。ドラッグで移動、ピンチ（PCはホイール）で拡大縮小。手番のコマを自動で追いかける。
-// マスやコマを押すと説明、光っているマス（止まれるマス）を押すとそこまで一気に進む。
+// マスやコマを押すと説明、光っているマス（止まれるマス）を押すと、説明を見てからそこまで一気に進める。
+// フェリーに乗るときは、船が航路をわたるアニメーションを出す。
 import { useGesture } from '@use-gesture/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { CharShape, VIEWBOX } from '../../characters/Characters';
 import { CHARACTERS } from '../../data/characters';
-import { MAP_H, MAP_W, NODE } from '../../data/map';
+import { routeSamples } from '../../data/japan';
+import { MAP_H, MAP_W, NODE, ferryRoute } from '../../data/map';
 import { dist } from '../../engine/graph';
-import type { GameState } from '../../engine/types';
+import type { CharId, GameState } from '../../engine/types';
 import { MapLayer } from './MapLayer';
-import { Squares } from './Squares';
+import { Ship, Squares } from './Squares';
+
+/** フェリーで移動中（アニメーション用） */
+export interface VoyageInfo {
+  player: number;
+  /** 乗った乗り場 */
+  from: string;
+  ms: number;
+  key: number;
+}
 
 interface Props {
   game: GameState;
@@ -21,12 +32,13 @@ interface Props {
   onGoal: (to: string) => void;
   onInspect: (node: string) => void;
   onPlayer: (id: number) => void;
+  voyage: VoyageInfo | null;
 }
 
 const BASE_SPAN = 560; // ふだんの拡大率で、画面の横幅に入る地図の広さ
 const PIECE_W = 66;
 
-export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onInspect, onPlayer }: Props) {
+export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onInspect, onPlayer, voyage }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 360, h: 600 });
   const [cam, setCam] = useState({ x: NODE[game.players[0].pos].x, y: NODE[game.players[0].pos].y, z: 1 });
@@ -55,11 +67,27 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
   const goal = ph.t === 'moving' ? ph.goal : undefined;
   const showEnds = canChoose && !goal ? ends : [];
   const forkKey = options.length > 0 ? `${p.pos}|${ends.join(',')}` : '';
+  // フェリーに乗るか聞いているとき・乗っているときは、航路の全体を見せる
+  const ferryAsk = canChoose && ph.t === 'ferry' ? ph : null;
+  const routeFrom = voyage ? voyage.from : ferryAsk ? p.pos : null;
+  const routeKey = routeFrom ? `${routeFrom}|${voyage ? 'go' : 'ask'}` : '';
 
   // 手番の人が動いたら、カメラが追いかける
   useEffect(() => {
     if (overview) {
       setCam({ x: MAP_W / 2, y: MAP_H / 2, z: fitZoom });
+      return;
+    }
+    if (routeFrom) {
+      const pts = ferryRoute(routeFrom);
+      const xs = pts.map((q) => q[0]);
+      const ys = pts.map((q) => q[1]);
+      const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+      // 聞いているときは下に説明が出るので、上の6割に収める
+      const vh = voyage ? size.h : size.h * 0.6;
+      const z = Math.max(Math.min(size.w / (x1 - x0 + 200), vh / (y1 - y0 + 200), baseZoom), fitZoom);
+      setCam({ x: (x0 + x1) / 2, y: (y0 + y1) / 2 + (size.h - vh) / 2 / z, z });
+      zoomedForFork.current = true;
       return;
     }
     // 分かれ道では、止まれるマスがなるべく全部見えるように引く（今いるマスは画面に残す）
@@ -80,7 +108,7 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
     followed.current = true;
     zoomedForFork.current = false;
     setCam((c) => ({ x: target.x, y: target.y - 20, z: reset || c.z < baseZoom * 0.7 || c.z === fitZoom ? baseZoom : c.z }));
-  }, [target.x, target.y, game.turn, overview, baseZoom, fitZoom, forkKey]);
+  }, [target.x, target.y, game.turn, overview, baseZoom, fitZoom, forkKey, routeKey]);
 
   const bind = useGesture(
     {
@@ -164,6 +192,13 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
               </g>
             );
           })}
+          {/* フェリーの行き先 */}
+          {ferryAsk && (
+            <g transform={`translate(${NODE[ferryAsk.to].x} ${NODE[ferryAsk.to].y})`}>
+              <circle r={34} fill="#fff27a" opacity={0.9} className="reach-glow" />
+              <circle r={30} fill="none" stroke={myColor} strokeWidth={6} strokeDasharray="10 7" className="goal-ring" />
+            </g>
+          )}
           {/* 選んだ行き先 */}
           {goal && (
             <g transform={`translate(${NODE[goal].x} ${NODE[goal].y})`}>
@@ -173,6 +208,7 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
 
           {/* コマ */}
           {order.map(({ q, x, y }) => {
+            if (voyage && voyage.player === q.id) return null;
             const isCur = q.id === p.id;
             const moving = isCur && ph.t === 'moving';
             return (
@@ -207,6 +243,8 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
               </g>
             );
           })}
+
+          {voyage && <Voyage key={voyage.key} info={voyage} charId={game.players[voyage.player].charId} />}
 
           {/* 止まれるマスの押せる範囲（コマより手前） */}
           {showEnds.map((id) => (
@@ -252,6 +290,47 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
         </g>
       </svg>
     </div>
+  );
+}
+
+/** フェリーが航路をわたるアニメーション（コマは船の上に乗る） */
+function Voyage({ info, charId }: { info: VoyageInfo; charId: CharId }) {
+  const ref = useRef<SVGGElement>(null);
+  const shipRef = useRef<SVGGElement>(null);
+  const pts = useMemo(() => routeSamples(ferryRoute(info.from), 16), [info.from]);
+  useEffect(() => {
+    const L = [0];
+    for (let i = 1; i < pts.length; i++) L.push(L[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    const total = L[L.length - 1];
+    const t0 = performance.now();
+    let raf = 0;
+    let i = 1;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - t0) / info.ms);
+      const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2; // ゆっくり出て、ゆっくり着く
+      const at = e * total;
+      while (i < L.length - 1 && L[i] < at) i++;
+      const f = (at - L[i - 1]) / (L[i] - L[i - 1] || 1);
+      const dx = pts[i][0] - pts[i - 1][0];
+      ref.current?.setAttribute('transform', `translate(${pts[i - 1][0] + dx * f} ${pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * f})`);
+      if (Math.abs(dx) > 0.5) shipRef.current?.setAttribute('transform', `scale(${dx < 0 ? -1 : 1} 1)`);
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [pts, info.ms]);
+  const w = PIECE_W * 0.85;
+  return (
+    <g ref={ref} transform={`translate(${pts[0][0]} ${pts[0][1]})`} className="voyage">
+      <ellipse cx={0} cy={26} rx={52} ry={10} fill="#ffffff" opacity={0.5} />
+      <g ref={shipRef}>
+        <Ship y={6} scale={1.9} />
+      </g>
+      {/* 甲板の上に立つ */}
+      <svg x={-w / 2} y={-w * 1.12 + 12} width={w} height={w * 1.12} viewBox={VIEWBOX} overflow="visible">
+        <CharShape id={charId} expr="happy" />
+      </svg>
+    </g>
   );
 }
 

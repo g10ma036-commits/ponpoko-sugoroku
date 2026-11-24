@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { NODE, START_STATION, STATION_IDS } from '../data/map';
+import { FERRY, NODE, START_STATION, STATION_IDS } from '../data/map';
 import { PROPS_BY_STATION } from '../data/properties';
 import { decide } from './ai';
-import { assets, createGame, income, reduce, yearlyIncome } from './game';
+import { assets, createGame, income, nearestStation, reduce, yearlyIncome } from './game';
 import { ADJ, dist, reachableEnds } from './graph';
 import type { Action, GameState } from './types';
 
@@ -259,6 +259,66 @@ describe('止まれるマス', () => {
     const ends = reachableEnds('nigiwai', s.phase.prev, 4, s.destination);
     const bad = Object.keys(NODE).find((id) => !ends.has(id))!;
     expect(reduce(s, { t: 'GOAL', to: bad })).toBe(s);
+  });
+});
+
+describe('フェリー', () => {
+  const ferries = Object.keys(FERRY);
+
+  /** 乗り場のとなりのマスから1マス進んで、乗り場に止まったところ */
+  const atFerry = (ferry: string, cpu = false) => {
+    let s = structuredClone(ackAll(createGame(cfg(321, 2))));
+    s.players[s.turn].pos = ADJ[ferry][0];
+    s.players[s.turn].isCpu = cpu;
+    s.players[s.turn].cpuLevel = 3;
+    s = act(s, { t: 'ROLL' });
+    if (s.phase.t !== 'moving') throw new Error('not moving');
+    s.phase.steps = 1;
+    return s;
+  };
+  const landOn = (ferry: string) => ackAll(act(act(atFerry(ferry), { t: 'GOAL', to: ferry }), { t: 'STEP' }));
+
+  it('乗り場はフェリーマスで、行き先と2つで1組になっている', () => {
+    expect(ferries.length).toBeGreaterThanOrEqual(4);
+    for (const a of ferries) {
+      expect(NODE[a].kind).toBe('ferry');
+      expect(FERRY[FERRY[a]]).toBe(a);
+    }
+    for (const n of Object.values(NODE)) if (n.kind === 'ferry') expect(FERRY[n.id]).toBeDefined();
+  });
+
+  it('フェリーマスに止まると乗るか聞かれ、乗ると相手の乗り場まで一気に行く', () => {
+    for (const f of ferries) {
+      const s = landOn(f);
+      expect(s.phase).toEqual({ t: 'ferry', to: FERRY[f] });
+      const me = s.turn;
+      const r = act(s, { t: 'RIDE' });
+      expect(r.players[me].pos).toBe(FERRY[f]);
+      expect(r.queue[0].title).toContain('フェリー');
+      expect(ackAll(r).turn).not.toBe(me);
+    }
+  });
+
+  it('乗らないこともできる', () => {
+    const s = landOn(ferries[0]);
+    const me = s.turn;
+    const r = act(s, { t: 'DONE' });
+    expect(r.players[me].pos).toBe(ferries[0]);
+    expect(r.turn).not.toBe(me);
+  });
+
+  it('CPUは、おまつり会場に近づくときだけフェリーをねらって乗る', () => {
+    const f = ferries[0];
+    const near = structuredClone(atFerry(f, true));
+    near.destination = nearestStation(FERRY[f]);
+    expect(decide(near)).toEqual({ t: 'GOAL', to: f });
+    const far = structuredClone(landOn(f));
+    far.players[far.turn].isCpu = true;
+    far.players[far.turn].cpuLevel = 3;
+    far.destination = nearestStation(FERRY[f]);
+    expect(decide(far)).toEqual({ t: 'RIDE' });
+    far.destination = nearestStation(f);
+    expect(decide(far)).toEqual({ t: 'DONE' });
   });
 });
 

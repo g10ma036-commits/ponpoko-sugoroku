@@ -4,10 +4,10 @@
 //   つよい(3)：くもすけの受け渡しやマスの良し悪しまで考える
 
 import { CARDS, HAND_MAX } from '../data/cards';
-import { NODE } from '../data/map';
+import { FERRY, NODE } from '../data/map';
 import { PROP, PROPS_BY_STATION } from '../data/properties';
 import { SELL_RATE, cur, income, ownedProps, yearFactor } from './game';
-import { dist } from './graph';
+import { dist, reachableEnds } from './graph';
 import type { Action, CardId, GameState, Player } from './types';
 
 /** state を変えない疑似乱数（同じ局面なら同じ答え） */
@@ -28,9 +28,17 @@ export function decide(s: GameState): Action | null {
   switch (ph.t) {
     case 'action':
       return decideAction(s, p);
-    case 'moving':
+    case 'moving': {
+      // 動きはじめに、フェリーで近道できるか考える（よわいCPUは考えない）
+      if (!ph.goal && ph.walked === 0 && p.cpuLevel >= 2) {
+        const g = ferryGoal(s, p.pos, ph.prev, ph.steps);
+        if (g) return { t: 'GOAL', to: g };
+      }
       if (ph.options) return { t: 'DIR', to: decideDir(s, p, ph.options, ph.steps) };
       return { t: 'STEP' };
+    }
+    case 'ferry':
+      return decideFerry(s, p, ph.to);
     case 'buy':
       return decideBuy(s, p, ph.station);
     case 'shop':
@@ -83,7 +91,31 @@ function decideAction(s: GameState, p: Player): Action {
   return { t: 'ROLL' };
 }
 
-const LAND_BONUS: Record<string, number> = { minus: 15, plus: -3, card: -3, omikuji: -2, shop: 0, station: -4 };
+const LAND_BONUS: Record<string, number> = { minus: 15, plus: -3, card: -3, omikuji: -2, shop: 0, station: -4, ferry: 0 };
+
+/** フェリーに乗ると、おまつり会場まで 3マス以上近くなる乗り場に止まれるなら、そのマス */
+function ferryGoal(s: GameState, pos: string, prev: string | null, steps: number): string | null {
+  const ends = reachableEnds(pos, prev, steps, s.destination);
+  if (ends.has(s.destination)) return null;
+  let bestWalk = Infinity;
+  for (const e of ends) bestWalk = Math.min(bestWalk, dist(e, s.destination));
+  let best: string | null = null;
+  let bestDist = bestWalk - 3;
+  for (const e of ends) {
+    const to = FERRY[e];
+    if (to && dist(to, s.destination) < bestDist) {
+      bestDist = dist(to, s.destination);
+      best = e;
+    }
+  }
+  return best;
+}
+
+/** フェリーに乗るか：おまつり会場に 2マス以上近くなるなら乗る */
+function decideFerry(s: GameState, p: Player, to: string): Action {
+  if (p.cpuLevel === 1 && noise(s, 77) < 0.3) return noise(s, 78) < 0.5 ? { t: 'RIDE' } : { t: 'DONE' };
+  return dist(to, s.destination) + 2 <= dist(p.pos, s.destination) ? { t: 'RIDE' } : { t: 'DONE' };
+}
 
 function decideDir(s: GameState, p: Player, options: string[], steps: number): string {
   const mistake = p.cpuLevel === 1 ? 0.2 : p.cpuLevel === 2 ? 0.1 : 0;

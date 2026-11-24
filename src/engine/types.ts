@@ -1,7 +1,7 @@
 // ゲーム全体で使う型。engine/ は React に依存しない純TS。
 
 export type RegionId = 'hokkaido' | 'tohoku' | 'kanto' | 'chubu' | 'kinki' | 'chugoku' | 'shikoku' | 'kyushu' | 'okinawa';
-export type SquareKind = 'station' | 'plus' | 'minus' | 'card' | 'shop' | 'omikuji';
+export type SquareKind = 'station' | 'plus' | 'minus' | 'card' | 'shop' | 'omikuji' | 'ferry';
 export type PropCategory = 'food' | 'farm' | 'industry' | 'tourism';
 
 export type CharId = 'pokota' | 'mikeko' | 'shibamaru' | 'penkichi' | 'usami' | 'konko';
@@ -120,6 +120,8 @@ export type Phase =
       goal?: string;
     }
   | { t: 'buy'; station: string }
+  /** フェリーの乗り場に止まった。to は相手の乗り場 */
+  | { t: 'ferry'; to: string }
   | { t: 'shop'; items: CardId[] }
   | { t: 'sell'; next: 'action' | 'end' }
   | { t: 'end' }
@@ -156,6 +158,7 @@ export type Action =
   | { t: 'STEP' }
   | { t: 'DIR'; to: string }
   | { t: 'GOAL'; to: string }
+  | { t: 'RIDE' }
   | { t: 'BUY'; prop: string }
   | { t: 'BUY_CARD'; card: CardId }
   | { t: 'SELL'; prop: string }

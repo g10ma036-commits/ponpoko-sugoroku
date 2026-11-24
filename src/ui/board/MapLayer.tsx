@@ -1,8 +1,9 @@
 // マップの動かない部分（海・島・道・飾り）。hooks を使わないので、静止画の確認にも使える。
 import { memo } from 'react';
-import { ISLANDS, LAKES, coastDistance, geo, smoothPath } from '../../data/japan';
-import { EDGES, MAP_H, MAP_W, NODE, NODES, REGIONS } from '../../data/map';
+import { ISLANDS, LAKES, coastDistance, geo, onLand, routePath, routeSamples, smoothPath } from '../../data/japan';
+import { EDGES, FERRY_DEFS, MAP_H, MAP_W, NODE, NODES, REGIONS, ferryRoute } from '../../data/map';
 import type { MapNode } from '../../engine/types';
+import { Ship } from './Squares';
 
 /** 座標から決まる疑似乱数（飾りの配置用） */
 function hash(n: number) {
@@ -17,6 +18,17 @@ const landEdges = EDGES.filter((e) => !e.sea);
 const seaEdges = EDGES.filter((e) => e.sea);
 const islandPaths = ISLANDS.map((i) => ({ d: smoothPath(i.points), snowy: !!i.snowy }));
 const lakePaths = LAKES.map(smoothPath);
+/** フェリーの航路と、まん中に置く船の目印 */
+const ferryLines = FERRY_DEFS.map(([a]) => {
+  const pts = ferryRoute(a);
+  const sm = routeSamples(pts, 16);
+  const L = [0];
+  for (let i = 1; i < sm.length; i++) L.push(L[i - 1] + Math.hypot(sm[i][0] - sm[i - 1][0], sm[i][1] - sm[i - 1][1]));
+  const half = L[L.length - 1] / 2;
+  const k = Math.max(1, L.findIndex((v) => v >= half));
+  return { d: routePath(pts), mid: sm[k], flip: sm[k][0] < sm[k - 1][0], land: sm.filter(([x, y]) => onLand(x, y)) };
+});
+const ferryLand = ferryLines.flatMap((f) => f.land);
 /** 北海道（この高さより上）は雪景色 */
 const SNOW_Y = geo(141, 41.3)[1];
 
@@ -65,6 +77,7 @@ const findDecorations = (fuji: [number, number]) => {
       if (Math.hypot(x - FUJI[0], y - FUJI[1]) < 80) continue;
       if (NODES.some((n) => Math.hypot(n.x - x, n.y - y) < (n.kind === 'station' ? 80 : 46))) continue;
       if (EDGES.some((e) => segDist(x, y, NODE[e.a], NODE[e.b]) < 30)) continue;
+      if (ferryLand.some(([fx, fy]) => Math.hypot(fx - x, fy - y) < 30)) continue;
       const k = hash(i * 29 + 11);
       out.push({ x, y, kind: k < 0.6 ? 'tree' : k < 0.88 ? 'mount' : 'house', s: 0.8 + hash(i * 31) * 0.4 });
     }
@@ -161,6 +174,18 @@ export const MapLayer = memo(function MapLayer() {
           <path key={i} d={seg(NODE[e.a], NODE[e.b])} stroke="#ffffff" strokeWidth={8} strokeDasharray="4 16" />
         ))}
       </g>
+      {/* フェリーの航路 */}
+      <g fill="none" strokeLinecap="round">
+        {ferryLines.map((f, i) => (
+          <g key={i}>
+            <path d={f.d} stroke="#ffffff" strokeOpacity={0.6} strokeWidth={13} />
+            <path d={f.d} stroke="#24467f" strokeWidth={5} strokeDasharray="16 12" />
+          </g>
+        ))}
+      </g>
+      {ferryLines.map((f, i) => (
+        <Ship key={i} x={f.mid[0]} y={f.mid[1] - 4} scale={1.1} flip={f.flip} />
+      ))}
       {/* 線路 */}
       <g fill="none" strokeLinecap="round">
         <path d={landPath} stroke="#7a5a3a" strokeWidth={14} />

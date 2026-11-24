@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { sfx } from '../../audio/sound';
 import { CARDS, HAND_MAX } from '../../data/cards';
 import { CHARACTERS } from '../../data/characters';
-import { NODE, REGIONS } from '../../data/map';
+import { FERRY, NODE, REGIONS } from '../../data/map';
 import { CATEGORY_LABEL, PROPS_BY_STATION } from '../../data/properties';
 import { formatRyo } from '../../engine/format';
 import {
@@ -12,6 +12,7 @@ import {
   SELL_RATE,
   arrivalBonus,
   assets,
+  ferryPlace,
   income,
   isMonopoly,
   ownedProps,
@@ -246,7 +247,10 @@ export function CardSheet({ game, dispatch, onClose }: { game: GameState; dispat
 }
 
 // ---------------------------------------------------------------- マスの説明（盤面のマスを押したとき）
-export function SquareSheet({ game, node, onClose }: { game: GameState; node: string; onClose: () => void }) {
+/**
+ * マスの説明。onGo があるときは「光るマス」を押したときで、そこへ行くか えらべる。
+ */
+export function SquareSheet({ game, node, onClose, onGo }: { game: GameState; node: string; onClose: () => void; onGo?: () => void }) {
   const n = NODE[node];
   const p = game.players[game.turn];
   const d = dist(p.pos, node);
@@ -314,6 +318,20 @@ export function SquareSheet({ game, node, onClose }: { game: GameState; node: st
     );
   } else if (n.kind === 'shop') {
     body = <p className="sq-desc">止まると カード屋さんで カードを買えるよ。毎回5種類が ならぶんだ。</p>;
+  } else if (n.kind === 'ferry') {
+    const to = FERRY[node];
+    const dest = game.destination;
+    const [dHere, dThere] = [dist(node, dest), dist(to, dest)];
+    body = (
+      <>
+        <p className="sq-desc">
+          ぴったり止まると、フェリーで <b>{ferryPlace(to)}</b>の乗り場まで 一気に行けるよ。乗るかどうかは えらべる。通りすぎるだけでは 乗れないよ。
+        </p>
+        <div className={`hint ${dThere < dHere ? 'good' : ''}`}>
+          🏮 おまつり会場まで：ここから {dHere}マス ／ フェリーの行き先から {dThere}マス
+        </div>
+      </>
+    );
   } else {
     const total = FORTUNES.reduce((a, f) => a + f.w, 0);
     body = (
@@ -349,7 +367,18 @@ export function SquareSheet({ game, node, onClose }: { game: GameState; node: st
         </span>
       }
       onClose={onClose}
+      footer={
+        onGo && (
+          <>
+            <Btn onClick={onClose}>やめる</Btn>
+            <Btn variant="primary" onClick={onGo}>
+              🚩 ここへ行く！
+            </Btn>
+          </>
+        )
+      }
     >
+      {onGo && <div className="hint good go-hint">✨ このマスに 止まれるよ。ここまで 一気に進む？</div>}
       {body}
       <div className="sq-where">
         {d === 0 ? `${p.name}さんが いまいるマス` : `${p.name}さんの いる場所から ${d}マス`}
@@ -361,6 +390,41 @@ export function SquareSheet({ game, node, onClose }: { game: GameState; node: st
             ))}
           </span>
         )}
+      </div>
+    </Sheet>
+  );
+}
+
+// ---------------------------------------------------------------- フェリーに乗るか
+export function FerrySheet({ game, to, dispatch }: { game: GameState; to: string; dispatch: Dispatch }) {
+  const p = game.players[game.turn];
+  const here = dist(p.pos, game.destination);
+  const there = dist(to, game.destination);
+  const st = SQUARE_STYLE.ferry;
+  return (
+    <Sheet
+      title={
+        <span className="ps-title">
+          <span className="sq-dot" style={{ background: st.fill }}>
+            {st.label}
+          </span>
+          フェリー乗り場
+        </span>
+      }
+      footer={
+        <>
+          <Btn onClick={() => dispatch({ t: 'DONE' })}>乗らない</Btn>
+          <Btn variant="primary" onClick={() => dispatch({ t: 'RIDE' })}>
+            ⛴ 乗る！
+          </Btn>
+        </>
+      }
+    >
+      <p className="sq-desc">
+        フェリーに乗ると <b>{ferryPlace(to)}</b>の乗り場まで 一気に行けるよ。地図の 青い点線が 航路だよ。
+      </p>
+      <div className={`hint ${there < here ? 'good' : ''}`}>
+        🏮 {stationName(game.destination)}まで：いま あと{here}マス → 乗ると あと{there}マス
       </div>
     </Sheet>
   );

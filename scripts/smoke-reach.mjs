@@ -1,4 +1,4 @@
-// 「マスを押すと説明」「止まれるマスが光り、押すとそこまで一気に進む」の画面テスト
+// 「マスを押すと説明」「止まれるマスが光り、押すと説明が出て、そこまで一気に進める」の画面テスト
 //   node scripts/smoke-reach.mjs <URL> <出力フォルダ>
 import { chromium } from 'playwright-core';
 
@@ -103,6 +103,15 @@ for (let i = 0; i < 400 && !checked; i++) {
     const hit = page.locator('.reach-hit').nth(n - 1);
     const goal = await hit.getAttribute('data-goal');
     await hit.dispatchEvent('click');
+    await page.waitForTimeout(400);
+    // 光るマスを押すと、まず説明と「ここへ行く！」が出る
+    const go = page.locator('.sheet .btn-primary', { hasText: 'ここへ行く' });
+    if (!(await go.count())) {
+      fail('光るマスを押しても「ここへ行く！」が出ない');
+      break;
+    }
+    await shot('r06a-goal-confirm');
+    await go.click();
     await page.waitForTimeout(300);
     await shot('r06-goal-chosen');
     // 止まるまで待つ（途中で矢印が出たら失敗）

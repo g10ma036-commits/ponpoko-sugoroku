@@ -229,3 +229,41 @@ export function smoothPath(pts: [number, number][]): string {
   }
   return `${d} Z`;
 }
+
+/** 端のある曲線（フェリーの航路）の Catmull-Rom → ベジェの制御点 */
+function openCurves(pts: [number, number][]) {
+  const n = pts.length;
+  const p = (i: number) => pts[Math.max(0, Math.min(n - 1, i))];
+  const out: [number, number, number, number, number, number, number, number][] = [];
+  for (let i = 0; i < n - 1; i++) {
+    const [x0, y0] = p(i - 1);
+    const [x1, y1] = p(i);
+    const [x2, y2] = p(i + 1);
+    const [x3, y3] = p(i + 2);
+    out.push([x1, y1, x1 + (x2 - x0) / 6, y1 + (y2 - y0) / 6, x2 - (x3 - x1) / 6, y2 - (y3 - y1) / 6, x2, y2]);
+  }
+  return out;
+}
+
+/** 点を順になめらかに通る、端のある SVG パス */
+export function routePath(pts: [number, number][]): string {
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (const [, , c1x, c1y, c2x, c2y, x2, y2] of openCurves(pts)) d += ` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${x2},${y2}`;
+  return d;
+}
+
+/** routePath の曲線の上の点（点検・アニメーション用）。1区間あたり per 個 */
+export function routeSamples(pts: [number, number][], per = 24): [number, number][] {
+  const out: [number, number][] = [[pts[0][0], pts[0][1]]];
+  for (const [x1, y1, c1x, c1y, c2x, c2y, x2, y2] of openCurves(pts)) {
+    for (let k = 1; k <= per; k++) {
+      const t = k / per;
+      const u = 1 - t;
+      out.push([
+        u * u * u * x1 + 3 * u * u * t * c1x + 3 * u * t * t * c2x + t * t * t * x2,
+        u * u * u * y1 + 3 * u * u * t * c1y + 3 * u * t * t * c2y + t * t * t * y2,
+      ]);
+    }
+  }
+  return out;
+}
