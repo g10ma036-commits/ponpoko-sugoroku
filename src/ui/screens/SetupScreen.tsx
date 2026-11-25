@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CHARACTERS, PLAYABLE } from '../../data/characters';
+import { CHARACTERS, PERSONA, PLAYABLE } from '../../data/characters';
 import type { CharId, CpuLevel, PlayerConfig } from '../../engine/types';
 import { useApp } from '../../store/gameStore';
 import { Btn, CharFace, Segmented } from '../common';
@@ -107,6 +107,7 @@ export function SetupScreen() {
                 </button>
                 <div className="slot-fields">
                   <input className="name-input" value={s.name} maxLength={6} onChange={(e) => update(i, { name: e.target.value })} aria-label="なまえ" />
+                  {s.kind === 'cpu' && <div className="persona">性格：{PERSONA[s.charId].label}</div>}
                   {s.kind === 'cpu' && (
                     <Segmented<CpuLevel>
                       value={s.cpuLevel}
@@ -129,7 +130,10 @@ export function SetupScreen() {
                     <span>{CHARACTERS[id].name}</span>
                   </button>
                 ))}
-                <p className="note">{CHARACTERS[s.charId].intro}</p>
+                <p className="note">
+                  {CHARACTERS[s.charId].intro}
+                  {s.kind === 'cpu' && `（CPUの性格：${PERSONA[s.charId].label}…${PERSONA[s.charId].desc}）`}
+                </p>
               </div>
             )}
           </div>

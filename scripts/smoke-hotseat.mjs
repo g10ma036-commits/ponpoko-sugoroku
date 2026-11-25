@@ -26,7 +26,7 @@ for (let i = 0; i < 80 && seen.length < 2; i++) {
   if (await page.locator('.dialog').count()) { await page.locator('.dialog').click(); continue; }
   if (await page.locator('.dir-arrow').count()) { await page.locator('.dir-arrow').first().dispatchEvent('click'); continue; }
   if (await page.locator('.sheet-foot .btn-primary').count()) { await page.locator('.sheet-foot .btn-primary').click(); continue; }
-  if (await page.getByText('サイコロをふる').count()) await page.getByText('サイコロをふる').click();
+  if (await page.locator('.roll-btn').count()) await page.locator('.roll-btn').click();
 }
 console.log('handoff screens:', seen.join(' / '));
 console.log(errors.length ? errors.join('\n') : 'no errors');

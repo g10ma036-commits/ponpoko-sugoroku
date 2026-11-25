@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { FERRY, NODE, START_STATION, STATION_IDS } from '../data/map';
 import { PROPS_BY_STATION } from '../data/properties';
 import { decide } from './ai';
-import { assets, createGame, income, nearestStation, reduce, yearlyIncome } from './game';
+import { BOOM_MULT, HOT_MULT, SLUMP_MULT, assets, createGame, income, nearestStation, propIncome, reduce, yearlyIncome } from './game';
 import { ADJ, dist, reachableEnds } from './graph';
 import type { Action, GameState } from './types';
 
@@ -115,6 +115,7 @@ describe('ゲームの進行', () => {
     let s = ackAll(createGame(cfg()));
     s = structuredClone(s);
     const props = PROPS_BY_STATION['shika'];
+    s.economy = undefined; // 景気の影響をなくして くらべる
     s.players[0].money = 1_000_000;
     s.phase = { t: 'buy', station: 'shika' };
     for (const pr of props.slice(0, -1)) s = act(s, { t: 'BUY', prop: pr.id });
@@ -322,7 +323,67 @@ describe('フェリー', () => {
   });
 });
 
+describe('景気ニュース', () => {
+  it('はじめに今年の景気が発表され、好景気・不景気・ニュース速報で収益が変わる', () => {
+    const s0 = createGame(cfg(5));
+    expect(s0.economy).toBeDefined();
+    expect(s0.queue.some((m) => m.news)).toBe(true);
+    const s = structuredClone(ackAll(s0));
+    const pr = PROPS_BY_STATION['shika'][0];
+    const region = NODE[pr.station].region;
+    const other = region === 'okinawa' ? 'hokkaido' : 'okinawa';
+    const otherCat = pr.cat === 'food' ? 'farm' : 'food';
+    s.economy = { year: 1, boom: other, slump: otherCat };
+    expect(propIncome(s, pr)).toBe(income(pr));
+    s.economy = { year: 1, boom: region, slump: otherCat };
+    expect(propIncome(s, pr)).toBe(Math.round((income(pr) * BOOM_MULT) / 10) * 10);
+    s.economy = { year: 1, boom: other, slump: pr.cat };
+    expect(propIncome(s, pr)).toBe(Math.round((income(pr) * SLUMP_MULT) / 10) * 10);
+    s.economy = { year: 1, boom: other, slump: otherCat, hot: pr.station };
+    expect(propIncome(s, pr)).toBe(Math.round((income(pr) * HOT_MULT) / 10) * 10);
+    // 決算の見込みにも入る
+    s.owner[pr.id] = 0;
+    expect(yearlyIncome(s, 0).income).toBe(propIncome(s, pr));
+  });
+
+  it('1年遊ぶと、6月のニュース速報・毎月の総資産・名場面が記録される', () => {
+    let s = createGame({ ...cfg(17, 3), players: cfg(17, 3).players.map((p) => ({ ...p, isCpu: true })) });
+    let guard = 0;
+    let sawHot = false;
+    while ((s.phase.t !== 'gameOver' || s.queue.length > 0) && guard++ < 30000) {
+      if (s.queue[0]?.title === 'ニュース速報！') sawHot = true;
+      s = reduce(s, decide(s)!);
+    }
+    expect(sawHot).toBe(true);
+    expect(s.economy?.hot).toBeDefined();
+    // はじめ + 12か月
+    expect(s.history).toHaveLength(13);
+    expect(s.history![0]).toEqual(s.players.map(() => 10000));
+    expect(s.history![12]).toEqual(s.players.map((p) => assets(s, p.id)));
+    expect(s.highlights?.income).toBeDefined();
+    expect(s.highlights?.prize).toBeDefined();
+  });
+});
+
 describe('CPU', () => {
+  it('性格で考え方が変わる：買い物好きは持っている駅を買い足し、慎重派はお金を残す', () => {
+    const base = structuredClone(ackAll(createGame(cfg(23))));
+    const props = PROPS_BY_STATION['shika'];
+    const rest = props.slice(1).sort((a, b) => a.price - b.price);
+    base.owner = { [props[0].id]: 0 };
+    base.economy = undefined;
+    base.phase = { t: 'buy', station: 'shika' };
+    base.players[0].isCpu = true;
+    base.players[0].cpuLevel = 2;
+    base.players[0].money = rest[0].price + 100;
+    const buyer = structuredClone(base);
+    buyer.players[0].charId = 'mikeko';
+    expect(decide(buyer)).toMatchObject({ t: 'BUY' });
+    const careful = structuredClone(base);
+    careful.players[0].charId = 'penkichi';
+    expect(decide(careful)).toEqual({ t: 'DONE' });
+  });
+
   it('CPUだけの対戦が、いろいろなシードで最後まで進む', () => {
     for (let seed = 100; seed < 120; seed++) {
       let s = createGame({ ...cfg(seed, 4), players: cfg(seed, 4).players.map((p, i) => ({ ...p, isCpu: true, cpuLevel: ((i % 3) + 1) as 1 | 2 | 3 })) });

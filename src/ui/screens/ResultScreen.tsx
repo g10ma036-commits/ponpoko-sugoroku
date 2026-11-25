@@ -1,10 +1,11 @@
 import { useEffect } from 'react';
-import { sfx } from '../../audio/sound';
+import { setBgmMode, sfx } from '../../audio/sound';
 import { CharSvg } from '../../characters/Characters';
 import { CHARACTERS } from '../../data/characters';
 import { formatRyo } from '../../engine/format';
 import { assets, ownedProps } from '../../engine/game';
-import type { GameState } from '../../engine/types';
+import type { GameState, HighlightKey } from '../../engine/types';
+import { AssetChart } from '../hud/AssetChart';
 import { useApp } from '../../store/gameStore';
 import { Btn, CharFace } from '../common';
 
@@ -34,14 +35,29 @@ function awards(game: GameState): Award[] {
   return list;
 }
 
+/** 名場面の種類（出す順） */
+const HIGHLIGHTS: { key: HighlightKey; icon: string; title: string }[] = [
+  { key: 'prize', icon: '🏮', title: 'いちばんの賞金' },
+  { key: 'buy', icon: '🏯', title: 'いちばん高い買い物' },
+  { key: 'income', icon: '📜', title: 'いちばんの決算' },
+  { key: 'luck', icon: '🍀', title: 'いちばんの幸運' },
+  { key: 'loss', icon: '💦', title: 'いちばんの不運' },
+  { key: 'kumo', icon: '☁️', title: 'くもすけの大いたずら' },
+];
+
 export function ResultScreen({ game }: { game: GameState }) {
   const startGame = useApp((s) => s.startGame);
   const quitToTitle = useApp((s) => s.quitToTitle);
+  const setScreen = useApp((s) => s.setScreen);
+  const newBest = useApp((s) => s.newBest);
+  const records = useApp((s) => s.records);
+  const hasHuman = game.players.some((p) => !p.isCpu);
   const ranking = [...game.players].sort((a, b) => assets(game, b.id) - assets(game, a.id));
   const winner = ranking[0];
 
   useEffect(() => {
-    sfx.fanfare();
+    sfx.festival();
+    setBgmMode('festival');
   }, []);
 
   return (
@@ -67,6 +83,50 @@ export function ResultScreen({ game }: { game: GameState }) {
           </li>
         ))}
       </ol>
+      {newBest && hasHuman && records.best && (
+        <div className="best-banner">
+          📖 これまでの 最高記録を 更新！ <b>{formatRyo(records.best.value)}</b>
+        </div>
+      )}
+
+      {game.history && game.history.length >= 2 && (
+        <section className="result-panel">
+          <h3>📈 総資産の うつりかわり</h3>
+          <AssetChart history={game.history} players={game.players} years={game.years} />
+        </section>
+      )}
+
+      {game.highlights && Object.keys(game.highlights).length > 0 && (
+        <section className="result-panel">
+          <h3>🎬 名場面</h3>
+          <div className="highlights">
+            {HIGHLIGHTS.map(({ key, icon, title }) => {
+              const h = game.highlights?.[key];
+              if (!h) return null;
+              const who = game.players[h.player];
+              return (
+                <div key={key} className="hl">
+                  <span className="hl-icon">{icon}</span>
+                  <div className="hl-main">
+                    <div className="hl-title">
+                      {title}
+                      <span className="hl-when">
+                        {h.year}年目 {h.month}月
+                      </span>
+                    </div>
+                    <div className="hl-who">
+                      <CharFace id={who.charId} size={22} />
+                      <b>{who.name}</b>
+                    </div>
+                    <div className="hl-text">{h.text}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       <div className="awards">
         {awards(game).map((a) => (
           <div key={a.title} className="award">
@@ -94,7 +154,17 @@ export function ResultScreen({ game }: { game: GameState }) {
         >
           同じメンバーで もう一回
         </Btn>
-        <Btn onClick={quitToTitle}>タイトルへ</Btn>
+        <div className="title-row">
+          <Btn onClick={quitToTitle}>タイトルへ</Btn>
+          <Btn
+            onClick={() => {
+              quitToTitle();
+              setScreen('zukan');
+            }}
+          >
+            📖 図鑑・記録
+          </Btn>
+        </div>
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import { CharSvg } from '../../characters/Characters';
 import { CARDS, CARD_IDS } from '../../data/cards';
+import { CHARACTERS, PERSONA, PLAYABLE } from '../../data/characters';
 import { useApp } from '../../store/gameStore';
 import { SQUARE_STYLE } from '../board/Squares';
 import { CharFace } from '../common';
@@ -54,6 +55,16 @@ export function HowToScreen() {
         <p>
           駅に止まると、その町の物件を買えるよ。物件は毎年12月の<b>決算</b>で収益を生むんだ。
           ひとつの駅の物件を全部買うと<b>「ひとりじめ」で収益が2倍</b>！ 駅の下の点の色で、だれが持っているかわかるよ。
+          ひとりじめした駅は、金色のふちと 持ち主の色の旗で 目立つよ。
+        </p>
+      </section>
+
+      <section className="panel">
+        <h3>📰 景気ニュース</h3>
+        <p>
+          毎年1月に、その年の景気が発表されるよ。<b>好景気の地方</b>の物件は収益が1.5倍、<b>不景気の種類</b>（食べもの・農業・工業・観光のどれか）は0.6倍。
+          6月には<b>ニュース速報</b>で、テレビで紹介された駅の物件の収益が2倍になるんだ。どれも12月の決算に効くよ。
+          物件の年収益の横の 📈📉🔥 が景気の印。盤面の右上の 📰 ボタンで いつでも見なおせるよ。
         </p>
       </section>
 
@@ -101,9 +112,10 @@ export function HowToScreen() {
       <section className="panel">
         <h3>📅 季節のイベント</h3>
         <ul className="season">
-          <li>1月：お正月のお年玉</li>
+          <li>1月：お正月のお年玉・今年の景気ニュース</li>
           <li>2月：北海道の雪まつり（北海道の物件がもうかる）</li>
           <li>4月：お花見（観光の物件がもうかる）</li>
+          <li>6月：ニュース速報（ある駅の物件の収益が2倍）</li>
           <li>8月：夏祭り（おまつり会場の賞金が2倍）</li>
           <li>10月：収穫祭（農業の物件がもうかる）</li>
           <li>12月：決算（物件の収益が入る）</li>
@@ -111,12 +123,28 @@ export function HowToScreen() {
       </section>
 
       <section className="panel">
-        <h3>なかまたち</h3>
-        <div className="friends">
-          {(['pokota', 'mikeko', 'shibamaru', 'penkichi', 'usami', 'konko'] as const).map((id) => (
-            <CharFace key={id} id={id} size={48} expr="happy" />
+        <h3>なかまたち（CPUの性格）</h3>
+        <p className="note">CPUのときは、キャラごとに考え方のくせがあるよ。強さ（よわい〜つよい）とは別だよ。</p>
+        <div className="persona-help">
+          {PLAYABLE.map((id) => (
+            <div key={id} className="persona-row">
+              <CharFace id={id} size={40} expr="happy" />
+              <div>
+                <b>
+                  {CHARACTERS[id].name}：{PERSONA[id].label}
+                </b>
+                <div className="note">{PERSONA[id].desc}</div>
+              </div>
+            </div>
           ))}
         </div>
+      </section>
+
+      <section className="panel">
+        <h3>📖 図鑑・記録</h3>
+        <p>
+          行ったことのある駅、買ったことのある物件、ひとりじめした駅が図鑑にたまっていくよ。最高の総資産や優勝回数も残るんだ。タイトル画面の「📖 図鑑」から見てね。
+        </p>
       </section>
     </div>
   );

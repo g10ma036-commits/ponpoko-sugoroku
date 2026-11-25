@@ -142,8 +142,8 @@ for (let i = 0; i < 400 && !checked; i++) {
     else await page.locator('.sheet .btn-danger').first().click();
     continue;
   }
-  if (await page.getByText('サイコロをふる').count()) {
-    await tapText('サイコロをふる');
+  if (await page.locator('.roll-btn').count()) {
+    await page.locator('.roll-btn').click();
     continue;
   }
 }

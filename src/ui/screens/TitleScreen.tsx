@@ -40,8 +40,9 @@ export function TitleScreen() {
         <Btn big disabled={!hasSave} onClick={continueGame}>
           つづきから
         </Btn>
-        <div className="title-row">
+        <div className="title-row three">
           <Btn onClick={() => setScreen('howto')}>あそびかた</Btn>
+          <Btn onClick={() => setScreen('zukan')}>📖 図鑑</Btn>
           <Btn onClick={() => setScreen('settings')}>せってい</Btn>
         </div>
       </div>

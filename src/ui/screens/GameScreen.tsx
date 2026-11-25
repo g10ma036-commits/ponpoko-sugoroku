@@ -1,19 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { sfx } from '../../audio/sound';
+import { setBgmMode, sfx, type BgmMode } from '../../audio/sound';
 import { CharSvg } from '../../characters/Characters';
-import { CHARACTERS } from '../../data/characters';
+import { CHARACTERS, quipFor } from '../../data/characters';
 import { PROP } from '../../data/properties';
 import { decide } from '../../engine/ai';
 import { stationName } from '../../engine/game';
-import { reachableEnds } from '../../engine/graph';
+import { dist, reachableEnds } from '../../engine/graph';
 import type { GameState, Msg } from '../../engine/types';
 import { useApp } from '../../store/gameStore';
 import { Board, type VoyageInfo } from '../board/Board';
 import { Btn, CharFace, Sheet } from '../common';
 import { DiceOverlay } from '../hud/DiceOverlay';
 import { MessageDialog } from '../hud/MessageDialog';
-import { BuySheet, CardSheet, FerrySheet, PlayerSheet, SellSheet, ShopSheet, SquareSheet } from '../hud/Sheets';
+import { BuySheet, CardSheet, FerrySheet, NewsSheet, PlayerSheet, SellSheet, ShopSheet, SquareSheet } from '../hud/Sheets';
 import { TopBar } from '../hud/TopBar';
+import { TutorialBubble, currentTip } from '../hud/Tutorial';
 import { ResultScreen } from './ResultScreen';
 
 const SPEED = [0, 0.6, 1, 1.7];
@@ -34,13 +35,21 @@ export function GameScreen() {
   const setFastForward = useApp((s) => s.setFastForward);
   const quitToTitle = useApp((s) => s.quitToTitle);
   const setPrefs = useApp((s) => s.setPrefs);
+  const tipsSeen = useApp((s) => s.tipsSeen);
+  const markTip = useApp((s) => s.markTip);
+  const zukanNews = useApp((s) => s.zukanNews);
 
   const [overview, setOverview] = useState(false);
   // node の go が true なら「光るマス」を押したとき（そこへ行くか聞く）
-  const [sheet, setSheet] = useState<null | 'cards' | 'menu' | { player: number } | { node: string; go?: boolean }>(null);
+  const [sheet, setSheet] = useState<null | 'cards' | 'menu' | 'news' | { player: number } | { node: string; go?: boolean }>(null);
   const [voyage, setVoyage] = useState<VoyageInfo | null>(null);
   const [handoffDone, setHandoffDone] = useState<string | null>(null);
-  const [toasts, setToasts] = useState<{ id: number; text: string; color: string }[]>([]);
+  const [toasts, setToasts] = useState<{ id: number; text: string; sub?: string; color: string }[]>([]);
+  const toast = (text: string, color: string, sub?: string, ms = 2400) => {
+    const id = Date.now() + Math.random();
+    setToasts((ts) => [...ts.slice(-2), { id, text, sub, color }]);
+    window.setTimeout(() => setToasts((ts) => ts.filter((x) => x.id !== id)), ms);
+  };
 
   const p = game.players[game.turn];
   const ph = game.phase;
@@ -53,6 +62,12 @@ export function GameScreen() {
   const gameOver = ph.t === 'gameOver' && !msg;
   // 説明やメニューを見ているあいだは、人間の番を止めておく
   const paused = sheet !== null && !p.isCpu;
+
+  // ---- 場面に合わせてBGMを切りかえる（決算・くもすけの番・だれかが おまつり会場の近く）
+  const nearGoal = game.players.some((q) => dist(q.pos, game.destination) <= 6);
+  const bgm: BgmMode = gameOver || msg?.settlement ? 'festival' : game.kumo !== null && game.kumo === game.turn ? 'kumo' : nearGoal ? 'near' : 'normal';
+  useEffect(() => setBgmMode(bgm), [bgm]);
+  useEffect(() => () => setBgmMode('normal'), []);
 
   // 人間の移動中は、止まれるマスを計算して光らせる
   const moveKey = ph.t === 'moving' && !p.isCpu && ph.steps > 0 ? `${p.pos}|${ph.prev}|${ph.steps}|${game.destination}` : '';
@@ -96,12 +111,18 @@ export function GameScreen() {
     const bought = Object.keys(game.owner).filter((id) => before.owner[id] === undefined);
     if (bought.length > 0 && p.isCpu) {
       sfx.buy();
-      const id = Date.now();
-      const text = `${p.name}が「${PROP[bought[0]].name}」を買った！`;
-      setToasts((ts) => [...ts.slice(-2), { id, text, color: CHARACTERS[p.charId].color }]);
-      window.setTimeout(() => setToasts((ts) => ts.filter((x) => x.id !== id)), 2200);
+      const quip = quipFor(p.charId, 'buy', bought[0]);
+      toast(`${p.name}が「${PROP[bought[0]].name}」を買った！`, CHARACTERS[p.charId].color, quip ? `「${quip}」` : undefined);
     }
-  }, [game, p, speed]);
+  }, [game, p, speed]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- はじめて買った物件は図鑑にのる
+  useEffect(() => {
+    if (!zukanNews) return;
+    sfx.card();
+    const names = zukanNews.props.map((id) => PROP[id]?.name).filter(Boolean);
+    toast(`📖 図鑑に のった！`, '#e0a800', names.map((n) => `「${n}」`).join(''));
+  }, [zukanNews?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 手番が変わったら全体マップを閉じる
   useEffect(() => setOverview(false), [game.turn]);
@@ -109,6 +130,7 @@ export function GameScreen() {
   if (gameOver) return <ResultScreen game={game} />;
 
   const lastRollDice = ph.t === 'moving' ? ph.dice : [];
+  const tip = prefs.tutorial && !paused ? currentTip(game, humanTurn, ends.length, tipsSeen) : null;
 
   return (
     <div className="game">
@@ -136,11 +158,21 @@ export function GameScreen() {
           }}
           voyage={voyage}
         />
-        <BoardTools overview={overview} onOverview={() => setOverview((v) => !v)} onMenu={() => setSheet('menu')} />
-        <div className="toasts">
+        <BoardTools
+          overview={overview}
+          onOverview={() => setOverview((v) => !v)}
+          onMenu={() => setSheet('menu')}
+          onNews={() => {
+            sfx.tap();
+            setSheet('news');
+          }}
+        />
+        {tip && <TutorialBubble tip={tip} onOk={() => markTip(tip)} onStop={() => setPrefs({ tutorial: false })} />}
+        <div className={`toasts ${tip ? 'below-tip' : ''}`}>
           {toasts.map((t) => (
             <div key={t.id} className="toast" style={{ borderColor: t.color }}>
               {t.text}
+              {t.sub && <span className="toast-sub">{t.sub}</span>}
             </div>
           ))}
         </div>
@@ -185,6 +217,7 @@ export function GameScreen() {
           }
         />
       )}
+      {sheet === 'news' && !msg && <NewsSheet game={game} onClose={() => setSheet(null)} />}
       {sheet === 'menu' && (
         <Sheet title="メニュー" onClose={() => setSheet(null)}>
           <div className="menu-list">
@@ -193,6 +226,7 @@ export function GameScreen() {
             <Btn onClick={() => setPrefs({ speed: ((prefs.speed % 3) + 1) as 1 | 2 | 3 })}>
               進むはやさ：{['', 'ゆっくり', 'ふつう', 'はやい'][prefs.speed]}
             </Btn>
+            <Btn onClick={() => setPrefs({ tutorial: !prefs.tutorial })}>はじめての案内：{prefs.tutorial ? 'ON' : 'OFF'}</Btn>
             <Btn variant="danger" onClick={quitToTitle}>
               タイトルにもどる
             </Btn>
@@ -298,12 +332,15 @@ function ActionBar({ game, humanTurn, ends, sailing, fastForward, onRoll, onCard
   );
 }
 
-/** 盤面の右上に浮かぶボタン（全体マップ・メニュー） */
-function BoardTools({ overview, onOverview, onMenu }: { overview: boolean; onOverview: () => void; onMenu: () => void }) {
+/** 盤面の右上に浮かぶボタン（全体マップ・景気ニュース・メニュー） */
+function BoardTools({ overview, onOverview, onMenu, onNews }: { overview: boolean; onOverview: () => void; onMenu: () => void; onNews: () => void }) {
   return (
     <div className="board-tools">
       <button type="button" className="icon-btn" onClick={onOverview} aria-label="全体マップ">
         {overview ? '📍' : '🗺️'}
+      </button>
+      <button type="button" className="icon-btn" onClick={onNews} aria-label="景気ニュース">
+        📰
       </button>
       <button type="button" className="icon-btn" onClick={onMenu} aria-label="メニュー">
         ☰

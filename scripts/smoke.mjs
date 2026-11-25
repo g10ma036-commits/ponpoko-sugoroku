@@ -23,13 +23,13 @@ await shot('02-setup');
 await tapText('ゲームスタート');
 await page.waitForTimeout(600);
 await shot('03-welcome');
-// ようこそメッセージを進める
-for (let i = 0; i < 2; i++) {
+// はじめのメッセージ（ようこそ・おまつり会場・景気ニュース）を進める
+while (await page.locator('.dialog').count()) {
   await page.locator('.dialog').click();
   await page.waitForTimeout(600);
 }
 await shot('04-game');
-await tapText('サイコロをふる');
+await page.locator('.roll-btn').click();
 await page.waitForTimeout(700);
 await shot('05-dice');
 // 人間の手番：分かれ道なら最初の矢印、パネルが出たら「おわる」系で進める
@@ -55,7 +55,7 @@ for (let i = 0; i < 60; i++) {
     else await page.locator('.sheet-foot .btn, .sheet .btn-danger').first().click();
     continue;
   }
-  if (await page.getByText('サイコロをふる').count()) {
+  if (await page.locator('.roll-btn').count()) {
     await shot(`09-myturn-${i}`);
     break;
   }

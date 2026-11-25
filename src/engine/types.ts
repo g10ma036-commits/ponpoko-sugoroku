@@ -82,11 +82,33 @@ export interface Player extends PlayerConfig {
 
 export type Tone = 'info' | 'good' | 'bad' | 'event' | 'arrival' | 'kumo';
 
+/** 今年の景気（1月に発表）。boom の地方は収益アップ、slump の種類は収益ダウン。hot は6月のニュース速報の駅 */
+export interface Economy {
+  year: number;
+  boom: RegionId;
+  slump: PropCategory;
+  hot?: string;
+}
+
+/** 名場面（結果画面に出す）。いちばん大きかった出来事だけを残す */
+export type HighlightKey = 'buy' | 'luck' | 'loss' | 'kumo' | 'income' | 'prize';
+export interface Highlight {
+  player: number;
+  amount: number;
+  /** 「〇〇を 1万両で 買った」など（名前はつけない） */
+  text: string;
+  year: number;
+  month: number;
+}
+
 export interface SettlementRow {
   player: number;
   income: number;
   monopolies: number;
   maneki: boolean;
+  /** 決算の前とあとの総資産（順位が入れかわる演出用） */
+  before?: number;
+  after?: number;
 }
 
 export interface Msg {
@@ -101,6 +123,10 @@ export interface Msg {
   /** お金の増減（表示用） */
   delta?: number;
   settlement?: SettlementRow[];
+  /** ひとりじめ達成など、紙ふぶきでお祝いする */
+  celebrate?: boolean;
+  /** 景気ニュース（新聞ふうに出す） */
+  news?: boolean;
 }
 
 export type Phase =
@@ -150,6 +176,12 @@ export interface GameState {
   rollId: number;
   /** ログ（新しいものが後ろ） */
   log: string[];
+  /** 今年の景気（古いセーブには無い） */
+  economy?: Economy;
+  /** 月末ごとの全員の総資産（結果画面のグラフ用。古いセーブには無い） */
+  history?: number[][];
+  /** 名場面 */
+  highlights?: Partial<Record<HighlightKey, Highlight>>;
 }
 
 export type Action =

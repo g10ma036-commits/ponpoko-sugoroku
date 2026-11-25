@@ -4,11 +4,11 @@
 import { CARDS, CARD_IDS, HAND_MAX, SHOP_IDS } from '../data/cards';
 import { CHARACTERS } from '../data/characters';
 import { FERRY, NODE, REGIONS, START_STATION, STATION_IDS } from '../data/map';
-import { PROP, PROPS_BY_STATION } from '../data/properties';
+import { CATEGORY_LABEL, PROP, PROPS_BY_STATION } from '../data/properties';
 import { formatRyo } from './format';
 import { dist, nextOptions, reachableEnds, stepToward } from './graph';
 import { newSeed, pick, pickWeighted, rand, randInt } from './rng';
-import type { Action, CardId, GameConfig, GameState, Msg, Player, Property, SettlementRow } from './types';
+import type { Action, CardId, GameConfig, GameState, HighlightKey, Msg, Player, PropCategory, Property, RegionId, SettlementRow } from './types';
 
 export const START_MONEY = 10000;
 /** バランス調整用：物件の収益の倍率 */
@@ -53,6 +53,26 @@ export function assets(s: GameState, player: number): number {
   return s.players[player].money + ownedProps(s, player).reduce((a, p) => a + p.price, 0);
 }
 
+// ---------------------------------------------------------------- 景気
+/** 景気ニュースの倍率：好景気の地方・不景気の種類・ニュース速報の駅 */
+export const BOOM_MULT = 1.5;
+export const SLUMP_MULT = 0.6;
+export const HOT_MULT = 2;
+
+/** 今年の景気による、物件の収益の倍率 */
+export function newsMult(s: GameState, p: Property): number {
+  const e = s.economy;
+  if (!e) return 1;
+  let m = 1;
+  if (NODE[p.station].region === e.boom) m *= BOOM_MULT;
+  if (p.cat === e.slump) m *= SLUMP_MULT;
+  if (e.hot === p.station) m *= HOT_MULT;
+  return m;
+}
+
+/** 今年の景気をふくめた、物件の年収益（決算でもらえる額。ひとりじめの2倍は別） */
+export const propIncome = (s: GameState, p: Property) => Math.round((income(p) * newsMult(s, p)) / 10) * 10;
+
 /** 決算でもらえる見込みの収益 */
 export function yearlyIncome(s: GameState, player: number): { income: number; monopolies: number } {
   const props = ownedProps(s, player);
@@ -62,7 +82,7 @@ export function yearlyIncome(s: GameState, player: number): { income: number; mo
   for (const st of stations) {
     const mono = isMonopoly(s, st, player);
     if (mono) monopolies++;
-    for (const p of props) if (p.station === st) total += income(p) * (mono ? 2 : 1);
+    for (const p of props) if (p.station === st) total += propIncome(s, p) * (mono ? 2 : 1);
   }
   return { income: total, monopolies };
 }
@@ -99,7 +119,10 @@ export function createGame(cfg: GameConfig): GameState {
     queue: [],
     rollId: 0,
     log: [],
+    history: [],
+    highlights: {},
   };
+  s.history!.push(s.players.map((p) => assets(s, p.id)));
   // スタートから少し遠い駅を最初のおまつり会場にする
   s.destination = chooseDestination(s, START_STATION);
   // 全員に1枚ずつカードを配る
@@ -117,6 +140,7 @@ export function createGame(cfg: GameConfig): GameState {
     text: `最初のおまつり会場は「${stationName(s.destination)}」！\n一番に着くと賞金がもらえるぞ。`,
     speaker: 'hoo',
   });
+  announceEconomy(s);
   return s;
 }
 
@@ -332,6 +356,7 @@ function land(s: GameState) {
     case 'plus': {
       const amt = round100(randInt(s, PLUS_RANGE[0], PLUS_RANGE[1]) * 100 * yf);
       p.money += amt;
+      note(s, 'luck', p.id, amt, `ふくマスで ${formatRyo(amt)} もらった`);
       s.queue.push({ tone: 'good', title: 'ふくマス', text: `${formatRyo(amt)} もらった！`, speaker: p.charId, expr: 'happy', player: p.id, delta: amt });
       s.phase = { t: 'end' };
       return;
@@ -343,7 +368,9 @@ function land(s: GameState) {
         return;
       }
       p.money -= amt;
-      s.queue.push({ tone: 'bad', title: 'とほほマス', text: `${pick(s, MINUS_REASONS)}\n${formatRyo(amt)} はらった…`, speaker: p.charId, expr: 'sad', player: p.id, delta: -amt });
+      const why = pick(s, MINUS_REASONS);
+      note(s, 'loss', p.id, amt, `とほほマスで ${formatRyo(amt)} はらった`);
+      s.queue.push({ tone: 'bad', title: 'とほほマス', text: `${why}\n${formatRyo(amt)} はらった…`, speaker: p.charId, expr: 'sad', player: p.id, delta: -amt });
       checkDebt(s, 'end');
       return;
     }
@@ -433,6 +460,7 @@ function omikuji(s: GameState) {
   if (f === 0) {
     const amt = round100(randInt(s, 30, 50) * 100 * yf);
     p.money += amt;
+    note(s, 'luck', p.id, amt, `おみくじで 大吉！ ${formatRyo(amt)} もらった`);
     s.queue.push({ tone: 'good', title, text: `神さまから ${formatRyo(amt)} の おめぐみ！`, speaker: p.charId, expr: 'happy', player: p.id, delta: amt });
   } else if (f === 1) {
     const amt = round100(1000 * yf);
@@ -447,6 +475,7 @@ function omikuji(s: GameState) {
   } else if (f === 2) {
     const amt = round100(randInt(s, 15, 25) * 100 * yf);
     p.money += amt;
+    note(s, 'luck', p.id, amt, `おみくじで 吉！ ${formatRyo(amt)} もらった`);
     s.queue.push({ tone: 'good', title, text: `${formatRyo(amt)} もらった！`, speaker: p.charId, expr: 'happy', player: p.id, delta: amt });
   } else if (f === 3) {
     const amt = round100(500 * yf);
@@ -456,6 +485,7 @@ function omikuji(s: GameState) {
     if (useOmamori(s, p, '凶')) return;
     const amt = round100(randInt(s, 15, 25) * 100 * yf);
     p.money -= amt;
+    note(s, 'loss', p.id, amt, `おみくじで 凶… おさい銭に ${formatRyo(amt)}`);
     s.queue.push({ tone: 'bad', title, text: `おさい銭を はずみすぎた…\n${formatRyo(amt)} はらった。`, speaker: p.charId, expr: 'sad', player: p.id, delta: -amt });
     checkDebt(s, 'end');
   }
@@ -477,6 +507,7 @@ function arrive(s: GameState) {
   const bonus = arrivalBonus(s);
   p.money += bonus;
   p.arrivals++;
+  note(s, 'prize', p.id, bonus, `${stationName(s.destination)}に 一番のりして 賞金 ${formatRyo(bonus)}`);
   s.queue.push({
     tone: 'arrival',
     title: 'おまつり会場に一番のり！',
@@ -525,9 +556,11 @@ function buyProperty(s: GameState, propId: string, station: string): boolean {
   s.owner[propId] = p.id;
   p.money -= pr.price;
   log(s, `${p.name}が${pr.name}を買った`);
+  note(s, 'buy', p.id, pr.price, `${stationName(station)}の「${pr.name}」を ${formatRyo(pr.price)}で 買った`);
   if (isMonopoly(s, station, p.id)) {
     s.queue.push({
       tone: 'good',
+      celebrate: true,
       title: 'ひとりじめ！',
       text: `${stationName(station)}の物件を ぜんぶ手に入れた！\n決算の収益が2倍になるぞ。`,
       speaker: p.charId,
@@ -579,6 +612,7 @@ function useCard(s: GameState, index: number, num?: number, target?: number): bo
     case 'koban': {
       const amt = round100(randInt(s, 10, 30) * 100 * yf);
       p.money += amt;
+      note(s, 'luck', p.id, amt, `こばんを 両替して ${formatRyo(amt)}`);
       s.queue.push({ tone: 'good', title: 'こばん', text: `こばんを両替して ${formatRyo(amt)} になった！`, speaker: p.charId, expr: 'happy', player: p.id, delta: amt });
       break;
     }
@@ -619,8 +653,9 @@ function nextTurn(s: GameState) {
 }
 
 function endOfMonth(s: GameState) {
+  if (s.month === 12) settlement(s);
+  s.history?.push(s.players.map((p) => assets(s, p.id)));
   if (s.month === 12) {
-    settlement(s);
     s.year++;
     s.month = 1;
     if (s.year > s.years) {
@@ -640,9 +675,11 @@ function settlement(s: GameState) {
   const rows: SettlementRow[] = s.players.map((p) => {
     const { income: inc, monopolies } = yearlyIncome(s, p.id);
     const total = p.maneki ? Math.round(inc * 1.5) : inc;
-    const row: SettlementRow = { player: p.id, income: total, monopolies, maneki: p.maneki };
+    const before = assets(s, p.id);
+    const row: SettlementRow = { player: p.id, income: total, monopolies, maneki: p.maneki, before, after: before + total };
     p.money += total;
     p.lastIncome = total;
+    note(s, 'income', p.id, total, `${s.year}年目の決算で ${formatRyo(total)}`);
     p.maneki = false;
     return row;
   });
@@ -676,6 +713,7 @@ function monthStart(s: GameState) {
       const amt = round100(1000 * yf);
       for (const p of s.players) p.money += amt;
       push({ title: `${s.year}年目のお正月`, text: `あけまして おめでとう！\nみんなに お年玉 ${formatRyo(amt)}！`, expr: 'happy' });
+      announceEconomy(s);
       break;
     }
     case 2: {
@@ -688,6 +726,9 @@ function monthStart(s: GameState) {
       push({ title: 'お花見の季節', text: `観光の物件に お客さんが いっぱい！\n${lines.length ? lines.join('\n') : '観光の物件を持っている人は いなかった…'}` });
       break;
     }
+    case 6:
+      hotNews(s);
+      break;
     case 8:
       push({ title: '夏祭り', text: '今月は、おまつり会場の賞金が 2倍だ！' });
       break;
@@ -724,6 +765,7 @@ function kumoMischief(s: GameState) {
     const amt = Math.max(round100(Math.max(p.money, 0) * 0.15), round100(800 * yf));
     p.money -= amt;
     p.kumoDamage += amt;
+    note(s, 'kumo', p.id, amt, `くもすけの雨で さいふから ${formatRyo(amt)} 流された`);
     msg(`さいふに 雨がふりこんで ${formatRyo(amt)} 流されちゃった！`, -amt);
   } else if (kind === 'card') {
     const i = Math.floor(rand(s) * p.cards.length);
@@ -734,9 +776,73 @@ function kumoMischief(s: GameState) {
     const amt = Math.max(round100(income(pr) * 1.5), 500);
     p.money -= amt;
     p.kumoDamage += amt;
+    note(s, 'kumo', p.id, amt, `${pr.name}が 雨もりして 修理代 ${formatRyo(amt)}`);
     msg(`${pr.name}が 雨もり！\n修理代 ${formatRyo(amt)} をはらった。`, -amt);
   }
   checkDebt(s, 'action');
+}
+
+// ---------------------------------------------------------------- 景気ニュース
+
+const BOOM_NEWS = [
+  'テレビの旅番組で 大人気！',
+  '新しい道路が 開通した！',
+  'ご当地グルメが 大ブーム！',
+  '大きな博覧会が ひらかれる！',
+  'SNSで 話題になっている！',
+  '外国からの お客さんで にぎわっている！',
+];
+const SLUMP_NEWS: Record<PropCategory, string> = {
+  food: '材料が 値上がりして、食べもののお店が 苦しい…',
+  farm: '日照りで、畑や牧場が 元気がない…',
+  industry: '部品が 足りなくて、工場が ひと休み…',
+  tourism: '長雨で、観光のお客さんが へっている…',
+};
+
+/** 1月：今年の好景気の地方と、不景気の種類を発表する（去年と同じにはしない） */
+function announceEconomy(s: GameState) {
+  const regions = Object.keys(REGIONS) as RegionId[];
+  const cats = Object.keys(CATEGORY_LABEL) as PropCategory[];
+  const boom = pick(s, regions.filter((r) => r !== s.economy?.boom));
+  const slump = pick(s, cats.filter((c) => c !== s.economy?.slump));
+  const flavor = pick(s, BOOM_NEWS);
+  s.economy = { year: s.year, boom, slump };
+  const rName = REGIONS[boom].name;
+  s.queue.push({
+    tone: 'event',
+    news: true,
+    speaker: 'hoo',
+    expr: 'happy',
+    title: `${s.year}年目の 景気ニュース`,
+    text: `📈 ${rName}が ${flavor}\n→ 今年は ${rName}の物件の収益が ${BOOM_MULT}倍！\n\n📉 ${SLUMP_NEWS[slump]}\n→ 今年は ${CATEGORY_LABEL[slump].label}の物件の収益が ${SLUMP_MULT}倍…`,
+  });
+}
+
+/** 6月：ある駅がテレビで紹介されて、今年の決算でその駅の物件の収益が2倍になる */
+function hotNews(s: GameState) {
+  if (!s.economy) return;
+  const st = pick(s, STATION_IDS.filter((id) => id !== s.destination));
+  s.economy.hot = st;
+  const owners = [...new Set(PROPS_BY_STATION[st].map((p) => s.owner[p.id]).filter((o) => o !== undefined))];
+  const name = stationName(st);
+  s.queue.push({
+    tone: 'event',
+    news: true,
+    speaker: 'hoo',
+    expr: 'happy',
+    title: 'ニュース速報！',
+    text:
+      `🔥 「${name}」が テレビで しょうかいされて 大人気！\n今年の決算では、${name}の物件の収益が ${HOT_MULT}倍！` +
+      (owners.length ? `\n（持っている人：${owners.map((o) => s.players[o].name).join('・')}）` : '\nまだ だれも持っていない… 買うなら いまだ！'),
+  });
+}
+
+/** 名場面を記録する（同じ種類では、いちばん大きいものだけ残す） */
+function note(s: GameState, key: HighlightKey, player: number, amount: number, text: string) {
+  s.highlights ??= {};
+  const h = s.highlights[key];
+  if (h && h.amount >= amount) return;
+  s.highlights[key] = { player, amount, text, year: s.year, month: s.month };
 }
 
 function log(s: GameState, line: string) {

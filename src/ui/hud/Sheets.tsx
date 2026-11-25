@@ -1,19 +1,23 @@
 import { useState, type ReactNode } from 'react';
 import { sfx } from '../../audio/sound';
 import { CARDS, HAND_MAX } from '../../data/cards';
-import { CHARACTERS } from '../../data/characters';
+import { CHARACTERS, PERSONA } from '../../data/characters';
 import { FERRY, NODE, REGIONS } from '../../data/map';
 import { CATEGORY_LABEL, PROPS_BY_STATION } from '../../data/properties';
 import { formatRyo } from '../../engine/format';
 import {
+  BOOM_MULT,
   FORTUNES,
+  HOT_MULT,
+  SLUMP_MULT,
+  newsMult,
+  propIncome,
   MINUS_RANGE,
   PLUS_RANGE,
   SELL_RATE,
   arrivalBonus,
   assets,
   ferryPlace,
-  income,
   isMonopoly,
   ownedProps,
   round100,
@@ -28,7 +32,24 @@ import { Btn, CharFace, Money, Sheet } from '../common';
 
 type Dispatch = (a: Action) => boolean;
 
-function PropRow({ pr, right }: { pr: Property; right: ReactNode }) {
+/** 景気ニュースの印（📈 好景気・📉 不景気・🔥 ニュース速報） */
+function NewsBadge({ game, pr }: { game: GameState; pr: Property }) {
+  const e = game.economy;
+  if (!e) return null;
+  const marks: string[] = [];
+  if (NODE[pr.station].region === e.boom) marks.push('📈');
+  if (pr.cat === e.slump) marks.push('📉');
+  if (e.hot === pr.station) marks.push('🔥');
+  if (marks.length === 0) return null;
+  const m = newsMult(game, pr);
+  return (
+    <span className={`news-badge ${m >= 1 ? 'up' : 'down'}`}>
+      {marks.join('')}×{Math.round(m * 100) / 100}
+    </span>
+  );
+}
+
+function PropRow({ pr, right, game }: { pr: Property; right: ReactNode; game: GameState }) {
   const cat = CATEGORY_LABEL[pr.cat];
   return (
     <div className="prop-row">
@@ -44,12 +65,78 @@ function PropRow({ pr, right }: { pr: Property; right: ReactNode }) {
             値段 <b>{formatRyo(pr.price)}</b>
           </span>
           <span>
-            年収益 <b className="inc">{formatRyo(income(pr))}</b>
+            年収益 <b className="inc">{formatRyo(propIncome(game, pr))}</b>
+            <NewsBadge game={game} pr={pr} />
           </span>
         </div>
       </div>
       <div className="prop-right">{right}</div>
     </div>
+  );
+}
+
+/** この駅に関係する今年の景気ニュース */
+function StationNews({ game, station }: { game: GameState; station: string }) {
+  const e = game.economy;
+  if (!e) return null;
+  const lines: string[] = [];
+  const region = NODE[station].region;
+  if (region === e.boom) lines.push(`📈 今年は${REGIONS[region].name}が 好景気！ 収益${BOOM_MULT}倍`);
+  if (e.hot === station) lines.push(`🔥 ニュース速報の駅！ 収益${HOT_MULT}倍`);
+  if (PROPS_BY_STATION[station].some((p) => p.cat === e.slump)) lines.push(`📉 ${CATEGORY_LABEL[e.slump].label}の物件は 不景気（${SLUMP_MULT}倍）`);
+  if (lines.length === 0) return null;
+  return (
+    <div className="hint news-hint">
+      {lines.map((l) => (
+        <div key={l}>{l}</div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- 景気ニュース
+export function NewsSheet({ game, onClose }: { game: GameState; onClose: () => void }) {
+  const e = game.economy;
+  return (
+    <Sheet title="📰 今年の景気ニュース" onClose={onClose}>
+      {!e && <div className="empty">今年の景気ニュースは まだ出ていません。1月に 発表されるよ。</div>}
+      {e && (
+        <>
+          <div className="news-card up">
+            <div className="news-card-head">📈 好景気</div>
+            <div className="news-card-main">
+              <span className="region-dot" style={{ background: REGIONS[e.boom].color }} />
+              {REGIONS[e.boom].name}の物件
+            </div>
+            <div className="news-card-sub">決算の収益が {BOOM_MULT}倍</div>
+          </div>
+          <div className="news-card down">
+            <div className="news-card-head">📉 不景気</div>
+            <div className="news-card-main">
+              <span className="cat" style={{ background: CATEGORY_LABEL[e.slump].color }}>
+                {CATEGORY_LABEL[e.slump].label}
+              </span>
+              の物件
+            </div>
+            <div className="news-card-sub">決算の収益が {SLUMP_MULT}倍</div>
+          </div>
+          <div className={`news-card ${e.hot ? 'hot' : 'wait'}`}>
+            <div className="news-card-head">🔥 ニュース速報</div>
+            {e.hot ? (
+              <>
+                <div className="news-card-main">{stationName(e.hot)}の物件</div>
+                <div className="news-card-sub">決算の収益が {HOT_MULT}倍（{REGIONS[NODE[e.hot].region].name}）</div>
+              </>
+            ) : (
+              <div className="news-card-sub">6月に 発表されるよ。</div>
+            )}
+          </div>
+          <p className="note">
+            景気は 12月の決算の収益に 効きます。ほかの年は 毎年1月に 新しい景気が発表されるよ。物件の 年収益の横の 📈📉🔥 が 景気の印です。
+          </p>
+        </>
+      )}
+    </Sheet>
   );
 }
 
@@ -77,6 +164,7 @@ export function BuySheet({ game, station, dispatch }: { game: GameState; station
       <div className={`hint ${mono ? 'good' : ''}`}>
         {mono ? '🎉 ひとりじめ中！ 決算の収益が2倍' : others ? 'ほかの人も持っている駅です' : '全部買うと「ひとりじめ」で収益2倍！'}
       </div>
+      <StationNews game={game} station={station} />
       {props.map((pr) => {
         const o = game.owner[pr.id];
         const right =
@@ -96,7 +184,7 @@ export function BuySheet({ game, station, dispatch }: { game: GameState; station
               買う
             </Btn>
           );
-        return <PropRow key={pr.id} pr={pr} right={right} />;
+        return <PropRow key={pr.id} pr={pr} right={right} game={game} />;
       })}
     </Sheet>
   );
@@ -163,6 +251,7 @@ export function SellSheet({ game, dispatch }: { game: GameState; dispatch: Dispa
         <PropRow
           key={pr.id}
           pr={pr}
+          game={game}
           right={
             <Btn variant="danger" onClick={() => dispatch({ t: 'SELL', prop: pr.id })}>
               {formatRyo(round100(pr.price * SELL_RATE))}で売る
@@ -273,6 +362,7 @@ export function SquareSheet({ game, node, onClose, onGo }: { game: GameState; no
           </div>
         )}
         <p className="sq-desc">止まると、この町の物件を買えるよ。物件は毎年12月の決算で 収益を生むんだ。</p>
+        <StationNews game={game} station={node} />
         <div className={`hint ${monoOwner !== undefined ? 'good' : ''}`}>
           {monoOwner !== undefined
             ? `🎉 ${game.players[monoOwner].name}さんの ひとりじめ（決算の収益が2倍）`
@@ -289,7 +379,7 @@ export function SquareSheet({ game, node, onClose, onGo }: { game: GameState; no
             ) : (
               <span className="tag">売り物</span>
             );
-          return <PropRow key={pr.id} pr={pr} right={right} />;
+          return <PropRow key={pr.id} pr={pr} right={right} game={game} />;
         })}
       </>
     );
@@ -446,6 +536,11 @@ export function PlayerSheet({ game, player, onClose }: { game: GameState; player
       }
       onClose={onClose}
     >
+      {q.isCpu && (
+        <div className="hint persona-hint">
+          <b>性格：{PERSONA[q.charId].label}</b> … {PERSONA[q.charId].desc}
+        </div>
+      )}
       <div className="stats">
         <div>
           所持金<b>{formatRyo(q.money)}</b>

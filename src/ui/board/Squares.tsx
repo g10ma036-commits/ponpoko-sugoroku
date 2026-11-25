@@ -1,4 +1,5 @@
 // マスと駅。駅の下には物件の持ち主を色の点で表示する。
+// ひとりじめされた駅は、金色のふちと 持ち主の色の旗で目立たせる。
 import { memo } from 'react';
 import { NODES, REGIONS } from '../../data/map';
 import { PROPS_BY_STATION } from '../../data/properties';
@@ -38,6 +39,13 @@ const stations = NODES.filter((n) => n.kind === 'station');
 
 /** 目的地の旗の位置（札と反対側） */
 const FLAG_AT = { below: 'translate(18 -30)', above: 'translate(30 10)', right: 'translate(-22 -30)', left: 'translate(18 -30)' };
+/** ひとりじめの旗の位置と向き（目的地の旗・札とぶつからない側） */
+const MONO_AT: Record<string, { x: number; y: number; dir: 1 | -1 }> = {
+  below: { x: -18, y: -28, dir: -1 },
+  above: { x: -32, y: 18, dir: -1 },
+  right: { x: 22, y: -28, dir: 1 },
+  left: { x: -18, y: -28, dir: -1 },
+};
 
 export const Squares = memo(function Squares({ owner, colors, destination }: Props) {
   return (
@@ -60,11 +68,15 @@ export const Squares = memo(function Squares({ owner, colors, destination }: Pro
         const label = n.name ?? '';
         const lp = getLabels()[n.id];
         const w = lp.w;
+        const first = owner[props[0].id];
+        const mono = first !== undefined && props.every((p) => owner[p.id] === first) ? first : undefined;
+        const mf = MONO_AT[lp.side];
         return (
           <g key={n.id} data-node={n.id} className="tappable" transform={`translate(${n.x} ${n.y})`}>
             {isDest && (
               <circle r={44} className="dest-ring" fill="none" stroke="#ff5a5a" strokeWidth={6} />
             )}
+            {mono !== undefined && <rect x={-33} y={-33} width={66} height={66} rx={19} fill="#ffe27a" stroke="#e0a800" strokeWidth={4} className="mono-glow" />}
             <rect x={-26} y={-23} width={52} height={52} rx={14} fill="#4a3426" opacity={0.25} />
             <rect x={-26} y={-26} width={52} height={52} rx={14} fill="#fffaf0" stroke={REGIONS[n.region].color} strokeWidth={6} />
             {/* 駅の建物マーク */}
@@ -84,6 +96,19 @@ export const Squares = memo(function Squares({ owner, colors, destination }: Pro
                 return <circle key={p.id} cx={i * 14} r={5.5} fill={o === undefined ? '#ffffff' : colors[o]} stroke="#4a3426" strokeWidth={2} />;
               })}
             </g>
+            {mono !== undefined && (
+              <g transform={`translate(${mf.x} ${mf.y})`} className="mono-flag">
+                <path d="M0,0 L0,-40" stroke="#4a3426" strokeWidth={3.5} strokeLinecap="round" />
+                <path
+                  d={`M0,-40 L${mf.dir * 28},-40 L${mf.dir * 21},-32 L${mf.dir * 28},-24 L0,-24 Z`}
+                  fill={colors[mono]}
+                  stroke="#4a3426"
+                  strokeWidth={2.5}
+                  strokeLinejoin="round"
+                />
+                <circle cx={mf.dir * 11} cy={-32} r={4.5} fill="#ffe27a" stroke="#4a3426" strokeWidth={1.5} />
+              </g>
+            )}
             {isDest && (
               <g transform={FLAG_AT[lp.side]}>
                 <g className="dest-flag">

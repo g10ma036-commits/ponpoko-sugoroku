@@ -2,7 +2,7 @@ import { CHARACTERS } from '../../data/characters';
 import { dist } from '../../engine/graph';
 import { stationName } from '../../engine/game';
 import type { GameState } from '../../engine/types';
-import { CharFace, Money } from '../common';
+import { AnimatedMoney, CharFace } from '../common';
 
 export function TopBar({ game, onPlayer, onDest }: { game: GameState; onPlayer: (id: number) => void; onDest: () => void }) {
   const p = game.players[game.turn];
@@ -36,7 +36,7 @@ export function TopBar({ game, onPlayer, onDest }: { game: GameState; onPlayer: 
                 {game.kumo === q.id && <span title="くもすけ">☁️</span>}
                 {q.sleep > 0 && <span title="ねむり">💤</span>}
               </span>
-              <Money value={q.money} className="chip-money" />
+              <AnimatedMoney value={q.money} className="chip-money" />
             </span>
           </button>
         ))}

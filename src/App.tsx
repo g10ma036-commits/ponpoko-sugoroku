@@ -6,6 +6,7 @@ import { HowToScreen } from './ui/screens/HowToScreen';
 import { SettingsScreen } from './ui/screens/SettingsScreen';
 import { SetupScreen } from './ui/screens/SetupScreen';
 import { TitleScreen } from './ui/screens/TitleScreen';
+import { ZukanScreen } from './ui/screens/ZukanScreen';
 
 export function App() {
   const screen = useApp((s) => s.screen);
@@ -24,6 +25,7 @@ export function App() {
       {screen === 'setup' && <SetupScreen />}
       {screen === 'howto' && <HowToScreen />}
       {screen === 'settings' && <SettingsScreen />}
+      {screen === 'zukan' && <ZukanScreen />}
       {screen === 'game' && hasGame && <GameScreen />}
     </div>
   );

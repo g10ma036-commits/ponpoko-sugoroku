@@ -2,11 +2,13 @@
 //   よわい(1)：ときどき道をまちがえる・カードをあまり使わない・物件の買い方が気まぐれ
 //   ふつう(2)：目的地へ最短で向かい、手元に余裕を残して物件を買う
 //   つよい(3)：くもすけの受け渡しやマスの良し悪しまで考える
+// さらにキャラごとの性格（data/characters.ts の PERSONA）で、考え方のくせが少し変わる。
 
 import { CARDS, HAND_MAX } from '../data/cards';
+import { PERSONA } from '../data/characters';
 import { FERRY, NODE } from '../data/map';
 import { PROP, PROPS_BY_STATION } from '../data/properties';
-import { SELL_RATE, cur, income, ownedProps, yearFactor } from './game';
+import { SELL_RATE, cur, income, ownedProps, propIncome, yearFactor } from './game';
 import { dist, reachableEnds } from './graph';
 import type { Action, CardId, GameState, Player } from './types';
 
@@ -31,7 +33,7 @@ export function decide(s: GameState): Action | null {
     case 'moving': {
       // 動きはじめに、フェリーで近道できるか考える（よわいCPUは考えない）
       if (!ph.goal && ph.walked === 0 && p.cpuLevel >= 2) {
-        const g = ferryGoal(s, p.pos, ph.prev, ph.steps);
+        const g = ferryGoal(s, p, ph.prev, ph.steps);
         if (g) return { t: 'GOAL', to: g };
       }
       if (ph.options) return { t: 'DIR', to: decideDir(s, p, ph.options, ph.steps) };
@@ -56,8 +58,9 @@ function cardIndex(p: Player, id: CardId) {
 
 function decideAction(s: GameState, p: Player): Action {
   const lv = p.cpuLevel;
-  // よわいCPUは、たまにしかカードを使わない
-  if (lv === 1 && noise(s, 11) < 0.6) return { t: 'ROLL' };
+  const rush = PERSONA[p.charId].rush;
+  // よわいCPUは、たまにしかカードを使わない（いそぎ屋は少し多めに使う）
+  if (lv === 1 && noise(s, 11) < (rush ? 0.35 : 0.6)) return { t: 'ROLL' };
   const d = dist(p.pos, s.destination);
   const has = (id: CardId) => cardIndex(p, id) >= 0;
   const use = (id: CardId, extra: Partial<Extract<Action, { t: 'USE_CARD' }>> = {}): Action => ({ t: 'USE_CARD', index: cardIndex(p, id), ...extra });
@@ -81,11 +84,12 @@ function decideAction(s: GameState, p: Player): Action {
     if (has('hayate') && d >= 18) return use('hayate');
     if (has('kakeashi') && d >= 12) return use('kakeashi');
     if (has('fusen') && d >= 30) return use('fusen');
+    if (rush && has('kakeashi') && d > 8) return use('kakeashi');
     return { t: 'ROLL' };
   }
   if (p.sleep === 0) {
-    if (has('hayate') && d >= 10) return use('hayate');
-    if (has('kakeashi') && d >= 6) return use('kakeashi');
+    if (has('hayate') && d >= 10 - rush) return use('hayate');
+    if (has('kakeashi') && d >= 6 - rush) return use('kakeashi');
   }
   if (has('fusen') && d >= 30 && lv >= 2) return use('fusen');
   return { t: 'ROLL' };
@@ -93,14 +97,14 @@ function decideAction(s: GameState, p: Player): Action {
 
 const LAND_BONUS: Record<string, number> = { minus: 15, plus: -3, card: -3, omikuji: -2, shop: 0, station: -4, ferry: 0 };
 
-/** フェリーに乗ると、おまつり会場まで 3マス以上近くなる乗り場に止まれるなら、そのマス */
-function ferryGoal(s: GameState, pos: string, prev: string | null, steps: number): string | null {
-  const ends = reachableEnds(pos, prev, steps, s.destination);
+/** フェリーに乗ると、おまつり会場まで 3マス以上（のりもの好きは1マス以上）近くなる乗り場に止まれるなら、そのマス */
+function ferryGoal(s: GameState, p: Player, prev: string | null, steps: number): string | null {
+  const ends = reachableEnds(p.pos, prev, steps, s.destination);
   if (ends.has(s.destination)) return null;
   let bestWalk = Infinity;
   for (const e of ends) bestWalk = Math.min(bestWalk, dist(e, s.destination));
   let best: string | null = null;
-  let bestDist = bestWalk - 3;
+  let bestDist = bestWalk - (PERSONA[p.charId].ferry + 1);
   for (const e of ends) {
     const to = FERRY[e];
     if (to && dist(to, s.destination) < bestDist) {
@@ -111,10 +115,10 @@ function ferryGoal(s: GameState, pos: string, prev: string | null, steps: number
   return best;
 }
 
-/** フェリーに乗るか：おまつり会場に 2マス以上近くなるなら乗る */
+/** フェリーに乗るか：おまつり会場に 2マス以上（性格で変わる）近くなるなら乗る */
 function decideFerry(s: GameState, p: Player, to: string): Action {
   if (p.cpuLevel === 1 && noise(s, 77) < 0.3) return noise(s, 78) < 0.5 ? { t: 'RIDE' } : { t: 'DONE' };
-  return dist(to, s.destination) + 2 <= dist(p.pos, s.destination) ? { t: 'RIDE' } : { t: 'DONE' };
+  return dist(to, s.destination) + PERSONA[p.charId].ferry <= dist(p.pos, s.destination) ? { t: 'RIDE' } : { t: 'DONE' };
 }
 
 function decideDir(s: GameState, p: Player, options: string[], steps: number): string {
@@ -127,7 +131,7 @@ function decideDir(s: GameState, p: Player, options: string[], steps: number): s
   let bestScore = Infinity;
   options.forEach((o, i) => {
     let score = dist(o, s.destination) * 10;
-    if (p.cpuLevel >= 2 && steps === 1) score += LAND_BONUS[NODE[o].kind] ?? 0;
+    if (p.cpuLevel >= 2 && steps === 1) score += (LAND_BONUS[NODE[o].kind] ?? 0) + (PERSONA[p.charId].land[NODE[o].kind] ?? 0);
     if (p.cpuLevel === 3 && holder !== null) {
       const left = steps - 1;
       if (holder === p.id) {
@@ -150,17 +154,22 @@ function decideDir(s: GameState, p: Player, options: string[], steps: number): s
 function decideBuy(s: GameState, p: Player, station: string): Action {
   const yf = yearFactor(s.year);
   const lv = p.cpuLevel;
+  const persona = PERSONA[p.charId];
   const free = PROPS_BY_STATION[station].filter((pr) => s.owner[pr.id] === undefined);
-  const reserve = lv === 1 ? 0 : round(3000 * yf);
+  const othersOwn = PROPS_BY_STATION[station].some((pr) => s.owner[pr.id] !== undefined && s.owner[pr.id] !== p.id);
+  const mineHere = PROPS_BY_STATION[station].some((pr) => s.owner[pr.id] === p.id);
+  // 買い物好きは、すでに持っている駅なら お金を残さず買い足して ひとりじめをねらう
+  const reserve = lv === 1 || (persona.collector && mineHere && !othersOwn) ? 0 : round(3000 * yf * persona.reserve);
   if (free.length === 0) return { t: 'DONE' };
 
   // つよいCPUは、残りを全部買えるなら買い占める
   if (lv === 3) {
-    const othersOwn = PROPS_BY_STATION[station].some((pr) => s.owner[pr.id] !== undefined && s.owner[pr.id] !== p.id);
     const restCost = free.reduce((a, pr) => a + pr.price, 0);
     if (!othersOwn && restCost <= p.money - reserve) return { t: 'BUY', prop: free[0].id };
   }
-  const sorted = [...free].sort((a, b) => income(b) - income(a));
+  // ふつう・つよいCPUは、今年の景気もふくめた収益で考える
+  const inc = (pr: (typeof free)[number]) => (lv === 1 ? income(pr) : propIncome(s, pr));
+  const sorted = [...free].sort((a, b) => inc(b) - inc(a));
   for (const pr of sorted) {
     if (pr.price > p.money - reserve) continue;
     if (lv === 1 && noise(s, pr.price) < 0.4) continue;
@@ -171,14 +180,15 @@ function decideBuy(s: GameState, p: Player, station: string): Action {
 
 function decideShop(s: GameState, p: Player, items: CardId[]): Action {
   const yf = yearFactor(s.year);
-  if (p.cards.length >= HAND_MAX - 1) return { t: 'DONE' };
-  const reserve = round((p.cpuLevel === 3 ? 3000 : 6000) * yf);
+  const persona = PERSONA[p.charId];
+  if (p.cards.length >= HAND_MAX - (persona.hoarder ? 0 : 1)) return { t: 'DONE' };
+  const reserve = round((p.cpuLevel === 3 ? 3000 : 6000) * yf * persona.cardReserve);
   const count = (id: CardId) => p.cards.filter((c) => c === id).length;
   const wants: CardId[] =
     p.cpuLevel === 1
       ? ['kakeashi']
       : ['hayate', 'pittari', ...(s.kumo === p.id ? (['teruteru'] as CardId[]) : []), 'omamori', 'kakeashi', ...(s.month <= 10 ? (['maneki'] as CardId[]) : [])];
-  for (const id of wants) {
+  for (const id of [...new Set([...persona.shop, ...wants])]) {
     if (!items.includes(id)) continue;
     if (count(id) >= 2) continue;
     if (p.money - CARDS[id].price < reserve) continue;

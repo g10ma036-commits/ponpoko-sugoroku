@@ -1,7 +1,7 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { sfx } from '../audio/sound';
 import { CharShape } from '../characters/Characters';
-import { formatRyo } from '../engine/format';
+import { formatRyo, signedRyo } from '../engine/format';
 import type { Expr, SpeakerId } from '../engine/types';
 
 /** 顔のアップ（頭だけを切り取って表示） */
@@ -15,6 +15,58 @@ export function CharFace({ id, expr = 'normal', size = 44, className }: { id: Sp
 
 export function Money({ value, className = '' }: { value: number; className?: string }) {
   return <span className={`money ${value < 0 ? 'neg' : ''} ${className}`}>{formatRyo(value)}</span>;
+}
+
+/** 数字を from から to へ、なめらかに動かす（お金のカウントアップ） */
+export function useCountUp(value: number, ms = 700, from?: number): number {
+  const [shown, setShown] = useState(from ?? value);
+  const shownRef = useRef(from ?? value);
+  useEffect(() => {
+    const start = shownRef.current;
+    if (start === value) return;
+    const t0 = performance.now();
+    let raf = 0;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - t0) / ms);
+      const e = 1 - (1 - t) ** 3;
+      const v = t < 1 ? Math.round((start + (value - start) * e) / 10) * 10 : value;
+      shownRef.current = v;
+      setShown(v);
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value, ms]);
+  return shown;
+}
+
+/** 所持金の表示。増えると金色に光り、減ると赤くゆれて、増減の額がふわっと出る */
+export function AnimatedMoney({ value, className = '' }: { value: number; className?: string }) {
+  const shown = useCountUp(value);
+  const last = useRef(value);
+  const [pop, setPop] = useState<{ d: number; k: number } | null>(null);
+  useEffect(() => {
+    const d = value - last.current;
+    last.current = value;
+    if (d === 0) return;
+    const k = Date.now() + Math.random();
+    setPop({ d, k });
+    const t = window.setTimeout(() => setPop((p) => (p?.k === k ? null : p)), 1400);
+    return () => window.clearTimeout(t);
+  }, [value]);
+  const dir = pop ? (pop.d > 0 ? 'up' : 'down') : '';
+  return (
+    <span className={`money-anim ${dir}`}>
+      <span key={pop?.k} className={`money ${shown < 0 ? 'neg' : ''} ${className}`}>
+        {formatRyo(shown)}
+      </span>
+      {pop && (
+        <span key={`p${pop.k}`} className={`money-pop ${dir}`}>
+          {signedRyo(pop.d)}
+        </span>
+      )}
+    </span>
+  );
 }
 
 interface BtnProps {
