@@ -144,6 +144,8 @@ export type Phase =
       walked: number;
       /** 止まるマスを選んだときの行き先。分かれ道でも自動でそこへ向かう */
       goal?: string;
+      /** ねむり草で ねむっていたので、1〜3しか出なかった（演出用） */
+      sleepy?: boolean;
     }
   | { t: 'buy'; station: string }
   /** フェリーの乗り場に止まった。to は相手の乗り場 */

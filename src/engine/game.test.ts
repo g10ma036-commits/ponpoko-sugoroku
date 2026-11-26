@@ -175,6 +175,55 @@ describe('ゲームの進行', () => {
     expect(s.players[1].sleep).toBe(3);
   });
 
+  it('ねむっている間は、靴が使えず、ぴったり札も3まで', () => {
+    let s = structuredClone(ackAll(createGame(cfg(12))));
+    s.players[0].sleep = 2;
+    s.players[0].cards = ['kakeashi', 'hayate', 'pittari'];
+    expect(reduce(s, { t: 'USE_CARD', index: 0 })).toBe(s);
+    expect(reduce(s, { t: 'USE_CARD', index: 1 })).toBe(s);
+    expect(reduce(s, { t: 'USE_CARD', index: 2, num: 5 })).toBe(s);
+    s = act(s, { t: 'USE_CARD', index: 2, num: 3 });
+    expect(s.phase.t === 'moving' && s.phase.steps).toBe(3);
+    expect(s.phase.t === 'moving' && s.phase.sleepy).toBe(true);
+    expect(s.players[0].sleep).toBe(1);
+  });
+
+  it('ねむっているCPUは、ゴールが4マス以上先なら ぴったり札を使わない', () => {
+    const base = structuredClone(ackAll(createGame({ ...cfg(14), players: cfg(14).players.map((p) => ({ ...p, isCpu: true })) })));
+    const at = Object.keys(ADJ).find((id) => dist(id, base.destination) === 5)!;
+    expect(at).toBeDefined();
+    base.players[0].pos = at;
+    base.players[0].sleep = 3;
+    base.players[0].cards = ['pittari'];
+    expect(decide(base)).toEqual({ t: 'ROLL' });
+    base.players[0].sleep = 0;
+    expect(decide(base)).toEqual({ t: 'USE_CARD', index: 0, num: 5 });
+  });
+
+  it('招き猫は、もう効いているときは使えない', () => {
+    let s = structuredClone(ackAll(createGame(cfg(15))));
+    s.players[0].cards = ['maneki', 'maneki'];
+    s = ackAll(act(s, { t: 'USE_CARD', index: 0 }));
+    expect(s.players[0].maneki).toBe(true);
+    expect(reduce(s, { t: 'USE_CARD', index: 0 })).toBe(s);
+  });
+
+  it('てるてる坊主で追いはらった くもすけは、同じ番には もどってこない', () => {
+    let s = structuredClone(ackAll(createGame(cfg(16))));
+    const a = s.players[0].pos;
+    const b = ADJ[a][0];
+    s.players[1].pos = b;
+    s.kumo = 0;
+    s.players[0].cards = ['teruteru', 'pittari'];
+    s = ackAll(act(s, { t: 'USE_CARD', index: 0 }));
+    expect(s.kumo).toBe(1);
+    s = act(s, { t: 'USE_CARD', index: 0, num: 1 });
+    if (s.phase.t === 'moving' && s.phase.options) s = act(s, { t: 'DIR', to: b });
+    else if (s.phase.t === 'moving') s = act(s, { t: 'STEP' });
+    expect(s.players[0].pos).toBe(b);
+    expect(s.kumo).toBe(1);
+  });
+
   it('1年たつと決算があり、ゲームが終わる', () => {
     let s = createGame({ ...cfg(13), players: cfg(13).players.map((p) => ({ ...p, isCpu: true })) });
     let guard = 0;

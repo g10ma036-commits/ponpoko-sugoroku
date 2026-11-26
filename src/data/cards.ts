@@ -22,7 +22,7 @@ export const CARDS: Record<CardId, CardDef> = {
   hayate: { id: 'hayate', name: 'はやて靴', icon: '💨', desc: 'サイコロを3こふれる', price: 5000, weight: 9, move: true },
   pittari: { id: 'pittari', name: 'ぴったり札', icon: '🎯', desc: '1〜6の好きな数だけ進める', price: 4000, weight: 10, move: true, needsNum: true },
   fusen: { id: 'fusen', name: 'ふうせん', icon: '🎈', desc: 'どこかの駅へ ふわっと飛んでいく', price: 3000, weight: 9, move: true },
-  nemuri: { id: 'nemuri', name: 'ねむり草', icon: '🌿', desc: 'ほかの人みんな、3回のあいだ\nサイコロの目が1〜3になる', price: 6000, weight: 6 },
+  nemuri: { id: 'nemuri', name: 'ねむり草', icon: '🌿', desc: 'ほかの人みんな、3回のあいだ\n1〜3マスしか進めない（靴も使えない）', price: 6000, weight: 6 },
   koban: { id: 'koban', name: 'こばん', icon: '🪙', desc: 'お金がもらえる', price: 0, weight: 12 },
   maneki: { id: 'maneki', name: '招き猫', icon: '🐈', desc: '次の決算の収益が1.5倍', price: 7000, weight: 6 },
   omamori: { id: 'omamori', name: 'おまもり', icon: '🧧', desc: '持っていると、悪いことを1回ふせぐ', price: 3000, weight: 10, passive: true },

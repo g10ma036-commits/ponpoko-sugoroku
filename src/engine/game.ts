@@ -274,8 +274,7 @@ function startMove(s: GameState, diceCount: number, forced?: number) {
   const dice = forced !== undefined ? [forced] : Array.from({ length: diceCount }, () => randInt(s, 1, sleepy ? 3 : 6));
   const steps = dice.reduce((a, b) => a + b, 0);
   s.rollId++;
-  s.kumoMoved = false;
-  s.phase = { t: 'moving', steps, dice, prev: null, options: null, walked: 0 };
+  s.phase = { t: 'moving', steps, dice, prev: null, options: null, walked: 0, ...(sleepy ? { sleepy: true } : {}) };
   refreshOptions(s);
   log(s, `${p.name}は${dice.join('+')}で${steps}マス`);
 }
@@ -573,14 +572,25 @@ function buyProperty(s: GameState, propId: string, station: string): boolean {
 
 // ---------------------------------------------------------------- カード
 
+/** ぴったり札で選べる いちばん大きい数（ねむっている間は3まで） */
+export const pittariMax = (p: Player) => (p.sleep > 0 ? 3 : 6);
+
+/** いまそのカードを使えないなら、その理由（使えるなら null）。画面・CPU・ルールで共通 */
+export function cardBlocked(s: GameState, p: Player, id: CardId): string | null {
+  if (CARDS[id].passive) return '持っているだけで効く';
+  if ((id === 'kakeashi' || id === 'hayate') && p.sleep > 0) return `ねむっていて 使えない（あと${p.sleep}回）`;
+  if (id === 'teruteru' && (s.kumo !== p.id || s.players.length < 2)) return 'くもすけがいないと使えない';
+  if (id === 'maneki' && p.maneki) return 'もう効いている（次の決算で1.5倍）';
+  return null;
+}
+
 function useCard(s: GameState, index: number, num?: number, target?: number): boolean {
   const p = cur(s);
   const id = p.cards[index];
   if (!id) return false;
   const def = CARDS[id];
-  if (def.passive) return false;
-  if (id === 'pittari' && (num === undefined || num < 1 || num > 6 || !Number.isInteger(num))) return false;
-  if (id === 'teruteru' && (s.kumo !== p.id || s.players.length < 2)) return false;
+  if (cardBlocked(s, p, id)) return false;
+  if (id === 'pittari' && (num === undefined || num < 1 || num > pittariMax(p) || !Number.isInteger(num))) return false;
   if (id === 'koukan' && (target === undefined || target === p.id || !s.players[target])) return false;
 
   p.cards.splice(index, 1);
@@ -624,6 +634,8 @@ function useCard(s: GameState, index: number, num?: number, target?: number): bo
       const others = s.players.filter((q) => q.id !== p.id);
       const to = pick(s, others);
       s.kumo = to.id;
+      // この番のうちは、すれちがっても もどってこない
+      s.kumoMoved = true;
       s.queue.push({ tone: 'kumo', title: 'てるてる坊主', text: `お日さまが出て、くもすけは ${to.name}さんの ところへ 飛んでいった！`, speaker: 'kumo', expr: 'sad', player: to.id });
       break;
     }
@@ -643,6 +655,8 @@ function useCard(s: GameState, index: number, num?: number, target?: number): bo
 
 function nextTurn(s: GameState) {
   s.turn++;
+  // くもすけが乗りうつるのは 1つの番に1回まで
+  s.kumoMoved = false;
   if (s.turn >= s.players.length) {
     s.turn = 0;
     endOfMonth(s);

@@ -17,6 +17,8 @@ import {
   SELL_RATE,
   arrivalBonus,
   assets,
+  cardBlocked,
+  pittariMax,
   ferryPlace,
   isMonopoly,
   ownedProps,
@@ -277,8 +279,9 @@ export function CardSheet({ game, dispatch, onClose }: { game: GameState; dispat
   if (pending?.kind === 'num') {
     return (
       <Sheet title="🎯 何マス進む？" onClose={() => setPending(null)}>
+        {p.sleep > 0 && <div className="sleep-note">💤 ねむっているので、1〜3マスまで</div>}
         <div className="num-grid">
-          {[1, 2, 3, 4, 5, 6].map((n) => (
+          {Array.from({ length: pittariMax(p) }, (_, k) => k + 1).map((n) => (
             <Btn key={n} variant="primary" big onClick={() => use(pending.index, { num: n })}>
               {n}
             </Btn>
@@ -305,11 +308,17 @@ export function CardSheet({ game, dispatch, onClose }: { game: GameState; dispat
 
   return (
     <Sheet title={`🃏 ${p.name}の手札（${p.cards.length}/${HAND_MAX}）`} onClose={onClose}>
+      {p.sleep > 0 && (
+        <div className="sleep-note">
+          💤 ねむり中（あと{p.sleep}回）：1〜3マスしか進めない。靴のカードも使えないよ。
+        </div>
+      )}
       {p.cards.length === 0 && <div className="empty">カードを持っていません。ふだマスやカード屋さんで手に入るよ。</div>}
       {p.cards.map((id, i) => {
         const c = CARDS[id];
-        const disabled = c.passive || (id === 'teruteru' && game.kumo !== p.id);
-        const note = c.passive ? '持っているだけで効く' : id === 'teruteru' && game.kumo !== p.id ? 'くもすけがいないと使えない' : null;
+        const blocked = cardBlocked(game, p, id);
+        const disabled = blocked !== null;
+        const note = blocked ?? (id === 'pittari' && p.sleep > 0 ? 'ねむり中は 1〜3マスまで' : null);
         return (
           <div className="card-row" key={`${id}-${i}`}>
             <span className="card-icon">{c.icon}</span>

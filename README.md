@@ -48,6 +48,7 @@ Windowsのファイアウォールの確認が出たら「許可」してくだ�
 | `npm test` | ゲームのルールのテスト |
 | `npm run sim -- --games 1000 --years 3` | CPUだけで何試合も対戦させて、止まらないか・バランスを確認 |
 | `npm run sim -- --games 600 --levels 1,2,3,2` | CPUの強さを混ぜて勝率を比べる |
+| `npm run balance` | 「ふつうの人」をまねたプレイヤーが CPU（よわい・ふつう・つよい）に どれくらい勝てるかを測る。目安は 約65%・約43%・約28% |
 | `npm run build` | 本番用ビルド（`dist/`） |
 | `npm run icons` | アプリのアイコンを作り直す |
 | `npx tsx scripts/preview-chars.tsx out.png` | キャラ一覧の画像を作る |

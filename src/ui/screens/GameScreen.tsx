@@ -189,7 +189,7 @@ export function GameScreen() {
         onFast={() => setFastForward(!fastForward)}
       />
 
-      <DiceOverlay rollId={game.rollId} dice={lastRollDice} speed={speed} />
+      <DiceOverlay rollId={game.rollId} dice={lastRollDice} speed={speed} sleepy={ph.t === 'moving' && !!ph.sleepy} />
 
       {/* 人間の番の操作パネル */}
       {humanTurn && ph.t === 'buy' && <BuySheet game={game} station={ph.station} dispatch={dispatch} />}

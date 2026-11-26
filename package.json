@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "sim": "tsx scripts/simulate.ts",
+    "balance": "tsx scripts/balance.ts",
     "map:check": "tsx scripts/check-map.ts",
     "icons": "tsx scripts/gen-icons.tsx"
   },

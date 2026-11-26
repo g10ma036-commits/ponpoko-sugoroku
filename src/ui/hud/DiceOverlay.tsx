@@ -23,7 +23,7 @@ export function Die({ value, size = 64, rolling = false }: { value: number; size
 }
 
 /** サイコロをふったときの演出。rollId が変わるたびに再生する */
-export function DiceOverlay({ rollId, dice, speed }: { rollId: number; dice: number[]; speed: number }) {
+export function DiceOverlay({ rollId, dice, speed, sleepy = false }: { rollId: number; dice: number[]; speed: number; sleepy?: boolean }) {
   const [state, setState] = useState<'hidden' | 'rolling' | 'shown'>('hidden');
   const [faces, setFaces] = useState<number[]>(dice);
 
@@ -31,7 +31,7 @@ export function DiceOverlay({ rollId, dice, speed }: { rollId: number; dice: num
     if (dice.length === 0) return;
     sfx.dice();
     setState('rolling');
-    const spin = window.setInterval(() => setFaces(dice.map(() => 1 + Math.floor(Math.random() * 6))), 70);
+    const spin = window.setInterval(() => setFaces(dice.map(() => 1 + Math.floor(Math.random() * (sleepy ? 3 : 6)))), 70);
     const t1 = window.setTimeout(() => {
       window.clearInterval(spin);
       setFaces(dice);
@@ -57,6 +57,7 @@ export function DiceOverlay({ rollId, dice, speed }: { rollId: number; dice: num
         ))}
       </div>
       {state === 'shown' && <div className="dice-total">{total}マス すすむ！</div>}
+      {sleepy && <div className="dice-sleepy">💤 ねむり中… 1〜3しか出ない</div>}
     </div>
   );
 }
