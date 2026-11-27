@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { sfx } from '../../audio/sound';
 import { CHARACTERS, quipFor, type Quips } from '../../data/characters';
 import { assets } from '../../engine/game';
@@ -22,6 +22,48 @@ function soundFor(msg: Msg): () => void {
   if (msg.news) return sfx.news;
   if (msg.celebrate) return sfx.monopoly;
   return TONE_SOUND[msg.tone];
+}
+
+/** おみくじの結果が出たときの音 */
+function fortuneSound(f: string): () => void {
+  if (f === '大吉' || f === '中吉') return sfx.monopoly;
+  if (f === '凶') return sfx.bad;
+  return sfx.coin;
+}
+
+/** おみくじ：箱をカラカラふる → 棒が飛び出す → 紙が開いて 結果 */
+function OmikujiArt({ fortune, stage }: { fortune: string; stage: 'shake' | 'open' | 'done' }) {
+  const great = fortune === '大吉' || fortune === '中吉';
+  return (
+    <div className={`omikuji ${great ? 'great' : ''} ${fortune === '凶' ? 'bad' : ''}`}>
+      {stage === 'shake' ? (
+        <svg className="omk-box" viewBox="0 0 80 120" width={86} height={128}>
+          <g className="omk-stick">
+            <rect x={36} y={8} width={8} height={40} rx={2} fill="#f3d9a8" stroke="#4a3426" strokeWidth={2.5} />
+            <rect x={36} y={8} width={8} height={9} rx={2} fill="#e0524a" stroke="#4a3426" strokeWidth={2.5} />
+          </g>
+          <rect x={12} y={30} width={56} height={84} rx={7} fill="#c98b4a" stroke="#4a3426" strokeWidth={4} />
+          <rect x={14} y={32} width={13} height={80} rx={5} fill="#b07636" />
+          <ellipse cx={40} cy={30} rx={28} ry={7} fill="#dba468" stroke="#4a3426" strokeWidth={3.5} />
+          <ellipse cx={40} cy={29.5} rx={5.5} ry={2.2} fill="#4a3426" />
+          <rect x={30} y={44} width={22} height={60} rx={2} fill="#fffaf0" stroke="#e0524a" strokeWidth={2.5} />
+          {['お', 'み', 'く', 'じ'].map((ch, i) => (
+            <text key={ch} x={41} y={60 + i * 13} className="omk-label">
+              {ch}
+            </text>
+          ))}
+        </svg>
+      ) : (
+        <div className="omk-paper-wrap">
+          {great && <div className="omk-rays" />}
+          <div className="omk-paper">
+            <span className="omk-head">おみくじ</span>
+            <b className="omk-fortune">{fortune}</b>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** ふきだしに出す口ぐせ（同じ場面なら同じセリフ） */
@@ -50,16 +92,50 @@ interface Props {
   /** CPUの番などで、自動で次へ進むとき */
   auto: boolean;
   onNext: () => void;
+  /** 進むはやさ（おみくじの演出の長さに使う） */
+  speed?: number;
 }
 
-export function MessageDialog({ game, msg, auto, onNext: next }: Props) {
+export function MessageDialog({ game, msg, auto, onNext: next, speed = 1 }: Props) {
   const shownAt = useRef(0);
-  useEffect(() => {
+  // おみくじは「箱をふる → 紙が開く → 本文」の順に見せる
+  const [stage, setStage] = useState<'shake' | 'open' | 'done'>(msg.fortune ? 'shake' : 'done');
+  const timers = useRef<number[]>([]);
+  const clearTimers = () => {
+    timers.current.forEach((t) => window.clearTimeout(t));
+    timers.current = [];
+  };
+  useLayoutEffect(() => {
     shownAt.current = Date.now();
-    soundFor(msg)();
-  }, [msg]);
-  // 出たばかりのメッセージは、連打で飛ばさないように少し待つ
+    clearTimers();
+    if (!msg.fortune) {
+      setStage('done');
+      soundFor(msg)();
+      if (msg.thunder) sfx.thunder();
+      return;
+    }
+    const fortune = msg.fortune;
+    setStage('shake');
+    sfx.rattle();
+    const k = 1 / Math.max(1, speed);
+    timers.current = [
+      window.setTimeout(() => {
+        setStage('open');
+        fortuneSound(fortune)();
+      }, 1000 * k),
+      window.setTimeout(() => setStage('done'), 1650 * k),
+    ];
+    return clearTimers;
+  }, [msg]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 出たばかりのメッセージは、連打で飛ばさないように少し待つ。おみくじの演出中は 押すと結果まで飛ばす
   const onNext = () => {
+    if (stage !== 'done') {
+      if (stage === 'shake' && msg.fortune) fortuneSound(msg.fortune)();
+      clearTimers();
+      setStage('done');
+      shownAt.current = Date.now();
+      return;
+    }
     if (Date.now() - shownAt.current > 350) next();
   };
 
@@ -71,7 +147,15 @@ export function MessageDialog({ game, msg, auto, onNext: next }: Props) {
   const ownerColor = who ? CHARACTERS[who.charId].color : '#ffc93c';
 
   return (
-    <div className="dialog-backdrop" onClick={onNext}>
+    <div className={`dialog-backdrop ${msg.focus ? 'low' : ''}`} onClick={onNext}>
+      {msg.thunder && (
+        <>
+          <div className="thunder-flash" />
+          <svg className="thunder-bolt" viewBox="0 0 60 140" aria-hidden="true">
+            <path d="M36,0 L8,76 L28,76 L14,140 L54,52 L33,52 L48,0 Z" fill="#ffe14d" stroke="#4a3426" strokeWidth={4} strokeLinejoin="round" />
+          </svg>
+        </>
+      )}
       {msg.tone === 'arrival' && (
         <>
           <Fireworks />
@@ -79,26 +163,35 @@ export function MessageDialog({ game, msg, auto, onNext: next }: Props) {
         </>
       )}
       {msg.celebrate && <Confetti colors={[ownerColor, '#ffc93c', '#fff6c8', ownerColor]} count={30} />}
-      <div className={`dialog tone-${msg.tone} ${msg.news ? 'news' : ''} ${msg.tone === 'arrival' ? 'arrival-pop' : ''}`}>
+      <div className={`dialog tone-${msg.tone} ${msg.news ? 'news' : ''} ${msg.tone === 'arrival' ? 'arrival-pop' : ''} ${msg.thunder ? 'dialog-shake' : ''}`}>
         {msg.news && <div className="news-mast">📰 ぽんぽこ新聞</div>}
-        <div className="dialog-face">
-          <CharSvg id={speaker} expr={msg.expr ?? 'normal'} size={msg.news ? 64 : 92} className="bob" />
-        </div>
-        {quip && (
+        {msg.fortune ? (
+          <OmikujiArt fortune={msg.fortune} stage={stage} />
+        ) : (
+          <div className="dialog-face">
+            <CharSvg id={speaker} expr={msg.expr ?? 'normal'} size={msg.news ? 64 : msg.focus ? 70 : 92} className="bob" />
+          </div>
+        )}
+        {stage !== 'done' && <div className="omk-wait">{stage === 'shake' ? 'カラカラ…' : 'えいっ！'}</div>}
+        {stage === 'done' && quip && (
           <div className="quip">
             {quip.id !== speaker && <CharFace id={quip.id} size={22} />}「{quip.text}」
           </div>
         )}
         {msg.tone === 'arrival' && <div className="arrival-stamp">祝</div>}
-        {msg.title && <div className="dialog-title">{msg.title}</div>}
-        {who && speaker !== who.charId && (
-          <div className="dialog-who">
-            <CharFace id={who.charId} size={22} /> {who.name}さん
-          </div>
+        {stage === 'done' && (
+          <>
+            {msg.title && <div className="dialog-title">{msg.title}</div>}
+            {who && speaker !== who.charId && (
+              <div className="dialog-who">
+                <CharFace id={who.charId} size={22} /> {who.name}さん
+              </div>
+            )}
+            <p className={`dialog-text ${msg.news ? 'news-text' : ''}`}>{msg.text}</p>
+            {msg.delta !== undefined && msg.delta !== 0 && <Delta value={msg.delta} />}
+          </>
         )}
-        <p className={`dialog-text ${msg.news ? 'news-text' : ''}`}>{msg.text}</p>
-        {msg.delta !== undefined && msg.delta !== 0 && <Delta value={msg.delta} />}
-        <div className="dialog-next">{auto ? '…' : '▶ タップでつぎへ'}</div>
+        <div className="dialog-next">{auto ? '…' : stage === 'done' ? '▶ タップでつぎへ' : '▶ タップで結果へ'}</div>
       </div>
     </div>
   );

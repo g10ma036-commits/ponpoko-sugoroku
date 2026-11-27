@@ -63,6 +63,8 @@ export interface Quips {
   buy: string[];
   arrive: string[];
   kumo: string[];
+  /** オープニングのあいさつ */
+  hello: string[];
 }
 
 export const QUIPS: Record<CharId, Quips> = {
@@ -72,6 +74,7 @@ export const QUIPS: Record<CharId, Quips> = {
     buy: ['この町、気に入ったよ', 'いい駅には いい物件だね'],
     arrive: ['おまつり会場〜、おまつり会場〜！ 到着です！'],
     kumo: ['雨雲さん、切符は お持ちですか？', 'わわ、ずぶぬれだ〜'],
+    hello: ['しゅっぱつ しんこう〜！ よろしくね'],
   },
   mikeko: {
     happy: ['もうけ もうけ♪', 'そろばんが はずむわ！', 'これぞ 商売上手ね'],
@@ -79,6 +82,7 @@ export const QUIPS: Record<CharId, Quips> = {
     buy: ['いい買い物したわ', 'ここは 伸びるわよ〜', 'まいど ありがとう！'],
     arrive: ['一番のりは 商売の基本よ！'],
     kumo: ['ちょっと！ 売り物が ぬれちゃう！'],
+    hello: ['いい物件は ぜんぶ いただくわよ'],
   },
   shibamaru: {
     happy: ['わんっ！ やったー！', 'しっぽが とまらないよ！', 'ごほうびだー！'],
@@ -86,6 +90,7 @@ export const QUIPS: Record<CharId, Quips> = {
     buy: ['ここ、いい におい！', '買っちゃった！ わんっ'],
     arrive: ['いっちばーん！ わんわん！'],
     kumo: ['ぬれるの きらい〜！ ぶるぶる'],
+    hello: ['いちばんのりは ぼくだ！ わんっ'],
   },
   penkichi: {
     happy: ['ふふ、ちょっと うれしいな', 'ひんやり 気持ちいいね', 'こつこつが 一番だね'],
@@ -93,6 +98,7 @@ export const QUIPS: Record<CharId, Quips> = {
     buy: ['よく考えて 決めたよ', 'これは 堅い 物件だね'],
     arrive: ['のんびり来たら 一番だった！'],
     kumo: ['雨なら へっちゃら… だけど…'],
+    hello: ['あわてず、こつこつ いくよ'],
   },
   usami: {
     happy: ['きゃー、すてき！', 'きょうの わたし、ついてる！', 'ぴょんぴょん しちゃう！'],
@@ -100,6 +106,7 @@ export const QUIPS: Record<CharId, Quips> = {
     buy: ['かわいい物件 みーつけた♪', 'これ、ほしかったの！'],
     arrive: ['いちばん おしゃれに 到着♪'],
     kumo: ['せっかくの 毛なみが〜！'],
+    hello: ['カード、いっぱい 集めちゃう♪'],
   },
   konko: {
     happy: ['大吉の よかん！', 'お稲荷さまの おかげだね', 'こんこん、ラッキー！'],
@@ -107,6 +114,7 @@ export const QUIPS: Record<CharId, Quips> = {
     buy: ['ご縁が ありそう！', 'きっと 福を まねくよ'],
     arrive: ['おまつり 大好き！ 一番のり〜！'],
     kumo: ['おはらい しなくちゃ！'],
+    hello: ['きょうの運勢は… 大吉の よかん！'],
   },
 };
 

@@ -45,6 +45,34 @@ function tone(freq: number, at: number, dur: number, type: OscillatorType = 'squ
 
 const midi = (n: number) => 440 * Math.pow(2, (n - 69) / 12);
 
+let noiseBuf: AudioBuffer | null = null;
+/** ザーッという音（雷・風を切る音）。filter の周波数を from→to に動かす */
+function hiss(at: number, dur: number, vol: number, type: BiquadFilterType, from: number, to: number) {
+  if (!ctx || !master) return;
+  if (!noiseBuf) {
+    noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  const t = ctx.currentTime + at;
+  const src = ctx.createBufferSource();
+  src.buffer = noiseBuf;
+  src.loop = true;
+  const fl = ctx.createBiquadFilter();
+  fl.type = type;
+  fl.frequency.setValueAtTime(from, t);
+  fl.frequency.exponentialRampToValueAtTime(to, t + dur);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(fl);
+  fl.connect(g);
+  g.connect(master);
+  src.start(t);
+  src.stop(t + dur + 0.05);
+}
+
 function play(fn: () => void) {
   if (!sfxOn || !ctx) return;
   fn();
@@ -119,6 +147,35 @@ export const sfx = {
       tone(midi(88), 0, 0.05, 'square', 0.06);
       tone(midi(95), 0.05, 0.28, 'triangle', 0.11);
       tone(midi(100), 0.09, 0.2, 'sine', 0.04);
+    }),
+  /** 雷：ピシャッ、ゴロゴロ */
+  thunder: () =>
+    play(() => {
+      hiss(0, 0.25, 0.5, 'highpass', 3000, 900);
+      hiss(0.08, 1.6, 0.45, 'lowpass', 900, 120);
+      tone(55, 0.1, 1.2, 'sine', 0.25, 38);
+    }),
+  /** おみくじの箱をふる：カラカラ */
+  rattle: () =>
+    play(() => {
+      for (let i = 0; i < 12; i++) tone(1100 + ((i * 377) % 700), i * 0.065 + (i % 3) * 0.01, 0.03, 'triangle', 0.09);
+    }),
+  /** カットイン：シュッ */
+  whoosh: () =>
+    play(() => {
+      hiss(0, 0.32, 0.22, 'bandpass', 500, 3200);
+      tone(midi(84), 0.18, 0.12, 'triangle', 0.08);
+      tone(midi(91), 0.26, 0.2, 'triangle', 0.07);
+    }),
+  /** ぽんっ（建物が建つ・キャラが出る） */
+  pop: () => play(() => tone(520, 0, 0.12, 'sine', 0.16, 1250)),
+  /** ドンドコドン（オープニング） */
+  drumroll: () =>
+    play(() => {
+      for (let i = 0; i < 10; i++) taiko(i * 0.09, 0.18 + i * 0.025);
+      taiko(1.0, 0.5);
+      tone(midi(84), 1.0, 0.5, 'square', 0.06);
+      tone(midi(88), 1.0, 0.5, 'triangle', 0.08);
     }),
   /** 景気ニュース：ニュースのチャイム */
   news: () =>

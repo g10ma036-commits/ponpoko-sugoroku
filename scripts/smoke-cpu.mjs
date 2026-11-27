@@ -16,6 +16,9 @@ await page.getByText('はじめから').click();
 await page.locator('.seg-btn', { hasText: '1年' }).first().click();
 await page.locator('.slot').first().locator('.seg-btn', { hasText: 'CPU' }).click();
 await page.getByText('ゲームスタート').click();
+// オープニングは押してとばす
+await page.waitForTimeout(500);
+if (await page.locator('.opening').count()) await page.locator('.opening').click();
 await page.waitForTimeout(500);
 await page.getByText('はやおくり').click();
 let settled = false;

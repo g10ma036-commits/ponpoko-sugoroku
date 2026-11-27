@@ -16,6 +16,8 @@ export interface Prefs {
   speed: 1 | 2 | 3;
   /** はじめての人向けの案内（ホー博士のふきだし） */
   tutorial: boolean;
+  /** 豪華な演出（オープニング・手番のカットイン・季節の天気） */
+  fx: boolean;
 }
 
 /** 図鑑と記録（人間のプレイヤーのぶんだけ数える。何度遊んでも残る） */
@@ -61,7 +63,7 @@ function save(key: string, v: unknown) {
   }
 }
 
-const defaultPrefs: Prefs = { sfx: true, bgm: true, speed: 2, tutorial: true };
+const defaultPrefs: Prefs = { sfx: true, bgm: true, speed: 2, tutorial: true, fx: true };
 
 /** 1回の操作で、図鑑・記録に新しく加わったもの */
 function updateRecords(r: Records, prev: GameState, next: GameState): { records: Records; changed: boolean; newProps: string[]; newBest: boolean } {
@@ -149,6 +151,9 @@ interface AppState {
   lastConfig: GameConfig | null;
   /** CPUの手番をすごく速くする */
   fastForward: boolean;
+  /** はじめからのときだけ、オープニングを見せる */
+  opening: boolean;
+  endOpening: () => void;
   records: Records;
   /** 図鑑に新しくのった物件（お知らせ用。id は毎回ちがう番号） */
   zukanNews: { id: number; props: string[] } | null;
@@ -178,6 +183,8 @@ export const useApp = create<AppState>((set, get) => ({
   hasSave: loadSave() !== null,
   lastConfig: load<GameConfig>(LAST_CFG_KEY),
   fastForward: false,
+  opening: false,
+  endOpening: () => set({ opening: false }),
   records: { ...emptyRecords, ...(load<Records>(RECORDS_KEY) ?? {}) },
   zukanNews: null,
   newBest: false,
@@ -189,12 +196,12 @@ export const useApp = create<AppState>((set, get) => ({
     const game = createGame(cfg);
     save(SAVE_KEY, game);
     save(LAST_CFG_KEY, { ...cfg, seed: undefined });
-    set({ game, screen: 'game', hasSave: true, lastConfig: cfg, fastForward: false, newBest: false });
+    set({ game, screen: 'game', hasSave: true, lastConfig: cfg, fastForward: false, newBest: false, opening: get().prefs.fx });
   },
 
   continueGame: () => {
     const game = loadSave();
-    if (game) set({ game, screen: 'game', fastForward: false });
+    if (game) set({ game, screen: 'game', fastForward: false, opening: false });
   },
 
   dispatch: (a) => {

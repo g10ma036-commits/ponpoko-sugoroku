@@ -21,6 +21,9 @@ await tapText('はじめから');
 await page.waitForTimeout(300);
 await shot('02-setup');
 await tapText('ゲームスタート');
+// オープニングは押してとばす
+await page.waitForTimeout(500);
+if (await page.locator('.opening').count()) await page.locator('.opening').click();
 await page.waitForTimeout(600);
 await shot('03-welcome');
 // はじめのメッセージ（ようこそ・おまつり会場・景気ニュース）を進める
@@ -40,9 +43,9 @@ for (let i = 0; i < 60; i++) {
     await page.locator('.dialog').click();
     continue;
   }
-  if (await page.locator('.dir-arrow').count()) {
+  if (await page.locator('.dir-opt').count()) {
     await shot(`07-branch-${i}`);
-    await page.locator('.dir-arrow').first().dispatchEvent('click');
+    await page.locator('.dir-opt').first().dispatchEvent('click');
     continue;
   }
   if (await page.locator('.sheet').count()) {

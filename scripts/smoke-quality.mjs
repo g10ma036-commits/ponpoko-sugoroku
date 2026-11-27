@@ -46,6 +46,9 @@ await tapText('はじめから');
 await wait(300);
 await shot('q00-setup');
 await tapText('ゲームスタート');
+// オープニングは押してとばす
+await page.waitForTimeout(500);
+if (await page.locator('.opening').count()) await page.locator('.opening').click();
 await wait(1200);
 
 // はじめのメッセージ：ようこそ → おまつり会場 → 景気ニュース
@@ -56,7 +59,8 @@ for (let i = 0; i < 2; i++) {
 await shot('q01-news');
 if (!(await has('.news-mast'))) fail('景気ニュースが新聞ふうに出ない');
 await page.locator('.dialog').click();
-await wait(900);
+// 手番のカットインが終わってから 案内が出る
+await wait(1900);
 
 // 案内のふきだし
 await shot('q02-tip');

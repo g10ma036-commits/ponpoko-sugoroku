@@ -137,6 +137,7 @@ export function createGame(cfg: GameConfig): GameState {
   s.queue.push({
     tone: 'event',
     title: 'おまつり会場',
+    focus: s.destination,
     text: `最初のおまつり会場は「${stationName(s.destination)}」！\n一番に着くと賞金がもらえるぞ。`,
     speaker: 'hoo',
   });
@@ -455,12 +456,13 @@ function omikuji(s: GameState) {
   const yf = yearFactor(s.year);
   const f = pickWeighted(s, FORTUNES.map((x) => x.w));
   const title = `おみくじ：${FORTUNES[f].name}`;
+  const luck = { fortune: FORTUNES[f].name };
   s.phase = { t: 'end' };
   if (f === 0) {
     const amt = round100(randInt(s, 30, 50) * 100 * yf);
     p.money += amt;
     note(s, 'luck', p.id, amt, `おみくじで 大吉！ ${formatRyo(amt)} もらった`);
-    s.queue.push({ tone: 'good', title, text: `神さまから ${formatRyo(amt)} の おめぐみ！`, speaker: p.charId, expr: 'happy', player: p.id, delta: amt });
+    s.queue.push({ ...luck, tone: 'good', title, text: `神さまから ${formatRyo(amt)} の おめぐみ！`, speaker: p.charId, expr: 'happy', player: p.id, delta: amt });
   } else if (f === 1) {
     const amt = round100(1000 * yf);
     p.money += amt;
@@ -470,22 +472,25 @@ function omikuji(s: GameState) {
       p.cards.push(c);
       text += `\nさらに「${CARDS[c].icon} ${CARDS[c].name}」も もらった！`;
     }
-    s.queue.push({ tone: 'good', title, text, speaker: p.charId, expr: 'happy', player: p.id, delta: amt });
+    s.queue.push({ ...luck, tone: 'good', title, text, speaker: p.charId, expr: 'happy', player: p.id, delta: amt });
   } else if (f === 2) {
     const amt = round100(randInt(s, 15, 25) * 100 * yf);
     p.money += amt;
     note(s, 'luck', p.id, amt, `おみくじで 吉！ ${formatRyo(amt)} もらった`);
-    s.queue.push({ tone: 'good', title, text: `${formatRyo(amt)} もらった！`, speaker: p.charId, expr: 'happy', player: p.id, delta: amt });
+    s.queue.push({ ...luck, tone: 'good', title, text: `${formatRyo(amt)} もらった！`, speaker: p.charId, expr: 'happy', player: p.id, delta: amt });
   } else if (f === 3) {
     const amt = round100(500 * yf);
     p.money += amt;
-    s.queue.push({ tone: 'good', title, text: `ちょっぴり ${formatRyo(amt)} もらった。`, speaker: p.charId, expr: 'normal', player: p.id, delta: amt });
+    s.queue.push({ ...luck, tone: 'good', title, text: `ちょっぴり ${formatRyo(amt)} もらった。`, speaker: p.charId, expr: 'normal', player: p.id, delta: amt });
   } else {
-    if (useOmamori(s, p, '凶')) return;
+    if (useOmamori(s, p, '凶')) {
+      Object.assign(s.queue[s.queue.length - 1], luck);
+      return;
+    }
     const amt = round100(randInt(s, 15, 25) * 100 * yf);
     p.money -= amt;
     note(s, 'loss', p.id, amt, `おみくじで 凶… おさい銭に ${formatRyo(amt)}`);
-    s.queue.push({ tone: 'bad', title, text: `おさい銭を はずみすぎた…\n${formatRyo(amt)} はらった。`, speaker: p.charId, expr: 'sad', player: p.id, delta: -amt });
+    s.queue.push({ ...luck, tone: 'bad', title, text: `おさい銭を はずみすぎた…\n${formatRyo(amt)} はらった。`, speaker: p.charId, expr: 'sad', player: p.id, delta: -amt });
     checkDebt(s, 'end');
   }
   if (f <= 2 && s.kumo === p.id) {
@@ -522,6 +527,7 @@ function arrive(s: GameState) {
   s.queue.push({
     tone: 'event',
     title: 'つぎのおまつり会場',
+    focus: s.destination,
     text: `つぎのおまつり会場は「${stationName(s.destination)}」！`,
     speaker: 'hoo',
   });
@@ -759,7 +765,7 @@ function kumoMischief(s: GameState) {
   const yf = yearFactor(s.year);
   const r = rand(s);
   const msg = (text: string, delta?: number) =>
-    s.queue.push({ tone: 'kumo', title: 'くもすけのいたずら', text, speaker: 'kumo', expr: 'happy', player: p.id, delta });
+    s.queue.push({ tone: 'kumo', title: 'くもすけのいたずら', text, speaker: 'kumo', expr: 'happy', player: p.id, delta, thunder: true });
   if (r < 0.25) {
     s.queue.push({ tone: 'kumo', title: 'くもすけ', text: 'くもすけは すやすや お昼寝中…', speaker: 'kumo', expr: 'normal', player: p.id });
     return;

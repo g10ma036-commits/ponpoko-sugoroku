@@ -13,6 +13,9 @@ await page.locator('.slot').nth(1).locator('.seg-btn', { hasText: '人間' }).cl
 await page.locator('.slot').nth(2).locator('.seg-btn', { hasText: 'なし' }).click();
 await page.locator('.slot').nth(3).locator('.seg-btn', { hasText: 'なし' }).click();
 await page.getByText('ゲームスタート').click();
+// オープニングは押してとばす
+await page.waitForTimeout(500);
+if (await page.locator('.opening').count()) await page.locator('.opening').click();
 const seen = [];
 for (let i = 0; i < 80 && seen.length < 2; i++) {
   await page.waitForTimeout(500);
@@ -24,7 +27,8 @@ for (let i = 0; i < 80 && seen.length < 2; i++) {
     continue;
   }
   if (await page.locator('.dialog').count()) { await page.locator('.dialog').click(); continue; }
-  if (await page.locator('.dir-arrow').count()) { await page.locator('.dir-arrow').first().dispatchEvent('click'); continue; }
+  if (await page.locator('.sheet .btn-primary', { hasText: 'ここへ行く' }).count()) { await page.locator('.sheet .btn-primary', { hasText: 'ここへ行く' }).click(); continue; }
+  if (await page.locator('.dir-opt').count()) { await page.locator('.dir-opt').first().dispatchEvent('click'); continue; }
   if (await page.locator('.sheet-foot .btn-primary').count()) { await page.locator('.sheet-foot .btn-primary').click(); continue; }
   if (await page.locator('.roll-btn').count()) await page.locator('.roll-btn').click();
 }

@@ -26,6 +26,9 @@ await page.waitForTimeout(800);
 await tapText('はじめから');
 await page.waitForTimeout(300);
 await tapText('ゲームスタート');
+// オープニングは押してとばす
+await page.waitForTimeout(500);
+if (await page.locator('.opening').count()) await page.locator('.opening').click();
 await page.waitForTimeout(600);
 while (await page.locator('.dialog').count()) {
   await page.locator('.dialog').click();
@@ -88,11 +91,11 @@ for (let i = 0; i < 400 && !checked; i++) {
     await page.locator('.handoff .btn').click();
     continue;
   }
-  if ((await page.locator('.reach-ring').count()) > 1 && !(await page.locator('.dir-arrow').count())) {
+  if ((await page.locator('.reach-ring').count()) > 1 && !(await page.locator('.dir-opt').count())) {
     if (!sawRingsWhileWalking) await shot('r04-rings-walking');
     sawRingsWhileWalking = true;
   }
-  if (await page.locator('.dir-arrow').count()) {
+  if (await page.locator('.dir-opt').count()) {
     const n = await page.locator('.reach-hit').count();
     await page.waitForTimeout(600); // カメラが引くのを待つ
     await shot('r05-fork-rings');
@@ -117,7 +120,7 @@ for (let i = 0; i < 400 && !checked; i++) {
     // 止まるまで待つ（途中で矢印が出たら失敗）
     for (let k = 0; k < 120; k++) {
       await page.waitForTimeout(250);
-      if (await page.locator('.dir-arrow').count()) {
+      if (await page.locator('.dir-opt').count()) {
         fail('行き先を選んだのに、また分かれ道で止まった');
         break;
       }

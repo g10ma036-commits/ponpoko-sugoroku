@@ -448,3 +448,30 @@ describe('CPU', () => {
     }
   });
 });
+
+describe('演出のための目印', () => {
+  it('おみくじには結果、会場の発表にはカメラの行き先、くもすけのいたずらには雷がつく', () => {
+    let s = createGame({ ...cfg(21, 4), years: 2, players: cfg(21, 4).players.map((p) => ({ ...p, isCpu: true })) });
+    const seen = { fortune: 0, focus: 0, thunder: 0 };
+    let guard = 0;
+    while ((s.phase.t !== 'gameOver' || s.queue.length > 0) && guard++ < 60000) {
+      const m = s.queue[0];
+      if (m?.title?.startsWith('おみくじ：')) {
+        expect(m.fortune).toBe(m.title.slice('おみくじ：'.length));
+        seen.fortune++;
+      }
+      if (m?.title === 'つぎのおまつり会場' || m?.title === 'おまつり会場') {
+        expect(m.focus).toBe(s.destination);
+        seen.focus++;
+      }
+      if (m?.title === 'くもすけのいたずら') {
+        expect(m.thunder).toBe(true);
+        seen.thunder++;
+      }
+      s = reduce(s, decide(s)!);
+    }
+    expect(seen.fortune).toBeGreaterThan(0);
+    expect(seen.focus).toBeGreaterThan(1);
+    expect(seen.thunder).toBeGreaterThan(0);
+  });
+});

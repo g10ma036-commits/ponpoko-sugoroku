@@ -30,6 +30,9 @@ await page.waitForTimeout(800);
 await tapText('はじめから');
 await page.waitForTimeout(300);
 await tapText('ゲームスタート');
+// オープニングは押してとばす
+await page.waitForTimeout(500);
+if (await page.locator('.opening').count()) await page.locator('.opening').click();
 await page.waitForTimeout(1500);
 
 // セーブを書きかえて、なっとう町の分かれ道で「あと1マス」の状態にする（おまつり会場は北海道のこおり湖）
@@ -61,7 +64,7 @@ if (!(await page.getByText('フェリーで', { exact: false }).count())) fail('
 await page.locator('.sheet .btn', { hasText: 'やめる' }).click();
 await page.waitForTimeout(400);
 if (await page.locator('.sheet').count()) fail('「やめる」でとじない');
-if (!(await page.locator('.dir-arrow').count())) fail('「やめる」のあと分かれ道の矢印が消えた');
+if (!(await page.locator('.dir-opt').count())) fail('「やめる」のあと分かれ道の矢印が消えた');
 // 2回目は「ここへ行く！」
 await hit.dispatchEvent('click');
 await page.waitForTimeout(400);

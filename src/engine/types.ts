@@ -127,6 +127,12 @@ export interface Msg {
   celebrate?: boolean;
   /** 景気ニュース（新聞ふうに出す） */
   news?: boolean;
+  /** このメッセージのあいだ、カメラをこのマスへ向ける（おまつり会場の発表） */
+  focus?: string;
+  /** おみくじの結果（箱をふる演出のあとに見せる） */
+  fortune?: string;
+  /** くもすけのいたずら（雷を落とす） */
+  thunder?: boolean;
 }
 
 export type Phase =

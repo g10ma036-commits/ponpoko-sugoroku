@@ -25,6 +25,7 @@ export function TopBar({ game, onPlayer, onDest }: { game: GameState; onPlayer: 
           <button
             type="button"
             key={q.id}
+            data-player={q.id}
             className={`chip ${q.id === game.turn ? 'cur' : ''}`}
             style={{ ['--pc' as string]: CHARACTERS[q.charId].color }}
             onClick={() => onPlayer(q.id)}

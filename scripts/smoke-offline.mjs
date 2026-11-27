@@ -24,6 +24,9 @@ const fontOk = await page.evaluate(() => document.fonts.check('900 20px "Zen Mar
 console.log('offline title:', title, ' font loaded:', fontOk);
 await page.getByText('はじめから').click();
 await page.getByText('ゲームスタート').click();
+// オープニングは押してとばす
+await page.waitForTimeout(500);
+if (await page.locator('.opening').count()) await page.locator('.opening').click();
 await page.waitForTimeout(1000);
 await page.screenshot({ path: `${out}/30-offline-game.png` });
 console.log('offline game started:', (await page.locator('.board').count()) > 0);

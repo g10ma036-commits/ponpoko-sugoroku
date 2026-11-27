@@ -39,6 +39,19 @@ export function SettingsScreen() {
       </section>
 
       <section className="panel">
+        <h3>豪華な演出</h3>
+        <Segmented<string>
+          value={prefs.fx ? 'on' : 'off'}
+          onChange={(v) => setPrefs({ fx: v === 'on' })}
+          options={[
+            { value: 'on', label: 'ON' },
+            { value: 'off', label: 'OFF' },
+          ]}
+        />
+        <p className="note">ゲーム開始のオープニング・手番のカットイン・季節の天気（桜や雪）を出します。動きが重いときや、テンポよく遊びたいときは OFF に。</p>
+      </section>
+
+      <section className="panel">
         <h3>はじめての案内</h3>
         <Segmented<string>
           value={prefs.tutorial ? 'on' : 'off'}

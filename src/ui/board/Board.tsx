@@ -1,16 +1,18 @@
 // 盤面。ドラッグで移動、ピンチ（PCはホイール）で拡大縮小。手番のコマを自動で追いかける。
 // マスやコマを押すと説明、光っているマス（止まれるマス）を押すと、説明を見てからそこまで一気に進める。
 // フェリーに乗るときは、船が航路をわたるアニメーションを出す。
+// おまつり会場の発表では、カメラが会場まで飛んで ちょうちんが灯る。くもすけは 雨をふらせながら コマからコマへ飛びうつる。
 import { useGesture } from '@use-gesture/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { CharShape, VIEWBOX } from '../../characters/Characters';
 import { CHARACTERS } from '../../data/characters';
 import { routeSamples } from '../../data/japan';
-import { MAP_H, MAP_W, NODE, ferryRoute } from '../../data/map';
+import { MAP_H, MAP_W, NODE, NODES, ferryRoute } from '../../data/map';
 import { dist } from '../../engine/graph';
 import type { CharId, GameState } from '../../engine/types';
+import { getLabels, labelBox } from './labels';
 import { MapLayer } from './MapLayer';
-import { Ship, Squares } from './Squares';
+import { BuildPops, Ship, Squares, useBuildPops } from './Squares';
 
 /** フェリーで移動中（アニメーション用） */
 export interface VoyageInfo {
@@ -33,16 +35,22 @@ interface Props {
   onInspect: (node: string) => void;
   onPlayer: (id: number) => void;
   voyage: VoyageInfo | null;
+  /** カメラを向けるマス（おまつり会場の発表のとき） */
+  focus?: string;
 }
 
 const BASE_SPAN = 560; // ふだんの拡大率で、画面の横幅に入る地図の広さ
 const PIECE_W = 66;
+/** コマの上の くもすけ の高さ */
+const KUMO_Y = -PIECE_W * 1.12 - 48;
+const KUMO_FLY_MS = 800;
 
-export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onInspect, onPlayer, voyage }: Props) {
+export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onInspect, onPlayer, voyage, focus }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 360, h: 600 });
   const [cam, setCam] = useState({ x: NODE[game.players[0].pos].x, y: NODE[game.players[0].pos].y, z: 1 });
   const [dragging, setDragging] = useState(false);
+  const [slowCam, setSlowCam] = useState(false);
   const camRef = useRef(cam);
   const followed = useRef(false);
   const zoomedForFork = useRef(false);
@@ -71,11 +79,33 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
   const ferryAsk = canChoose && ph.t === 'ferry' ? ph : null;
   const routeFrom = voyage ? voyage.from : ferryAsk ? p.pos : null;
   const routeKey = routeFrom ? `${routeFrom}|${voyage ? 'go' : 'ask'}` : '';
+  // 物件を買う画面は下半分をおおうので、駅が上のほうに見えるようにする
+  const buyLift = canChoose && ph.t === 'buy';
+
+  // おまつり会場へ飛ぶときと、もどるときは、カメラをゆっくり動かす
+  const firstFocus = useRef(true);
+  useEffect(() => {
+    if (firstFocus.current) {
+      firstFocus.current = false;
+      return;
+    }
+    setSlowCam(true);
+    const t = window.setTimeout(() => setSlowCam(false), 1400);
+    return () => window.clearTimeout(t);
+  }, [focus]);
 
   // 手番の人が動いたら、カメラが追いかける
   useEffect(() => {
     if (overview) {
       setCam({ x: MAP_W / 2, y: MAP_H / 2, z: fitZoom });
+      return;
+    }
+    if (focus) {
+      const n = NODE[focus];
+      const z = baseZoom * 1.1;
+      // 下にメッセージが出るので、会場は画面の上のほうに見せる
+      setCam({ x: n.x, y: n.y + (size.h * 0.17) / z, z });
+      zoomedForFork.current = true;
       return;
     }
     if (routeFrom) {
@@ -107,8 +137,11 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
     const reset = !followed.current || zoomedForFork.current;
     followed.current = true;
     zoomedForFork.current = false;
-    setCam((c) => ({ x: target.x, y: target.y - 20, z: reset || c.z < baseZoom * 0.7 || c.z === fitZoom ? baseZoom : c.z }));
-  }, [target.x, target.y, game.turn, overview, baseZoom, fitZoom, forkKey, routeKey]);
+    setCam((c) => {
+      const z = reset || c.z < baseZoom * 0.7 || c.z === fitZoom ? baseZoom : c.z;
+      return { x: target.x, y: target.y - 20 + (buyLift ? (size.h * 0.27) / z : 0), z };
+    });
+  }, [target.x, target.y, game.turn, overview, baseZoom, fitZoom, forkKey, routeKey, focus, buyLift, size.h]);
 
   const bind = useGesture(
     {
@@ -148,7 +181,8 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
     if (nodeEl) onInspect(nodeEl.getAttribute('data-node')!);
   };
 
-  const colors = useMemo(() => game.players.map((q) => CHARACTERS[q.charId].color), [game.players]);
+  const charKey = game.players.map((q) => q.charId).join(',');
+  const colors = useMemo(() => game.players.map((q) => CHARACTERS[q.charId].color), [charKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const bestDist = Math.min(...options.map((o) => dist(o, game.destination)));
   const myColor = colors[p.id];
 
@@ -163,6 +197,36 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
   });
   const order = [...placed].sort((a, b) => (a.q.id === p.id ? 1 : b.q.id === p.id ? -1 : a.y - b.y));
 
+  // ---- くもすけが 乗りうつる・くっつく・逃げていく ときは、空を飛んで移動する
+  const prevKumo = useRef(game.kumo);
+  const [kumoFly, setKumoFly] = useState<{ from: [number, number]; to: [number, number]; target: number | null; key: number } | null>(null);
+  useEffect(() => {
+    const a = prevKumo.current;
+    const b = game.kumo;
+    prevKumo.current = b;
+    if (a === b) return;
+    const top = (id: number): [number, number] => {
+      const pp = placed.find((x) => x.q.id === id)!;
+      return [pp.x, pp.y + KUMO_Y + 32];
+    };
+    const from: [number, number] = a !== null ? top(a) : [top(b!)[0] - 60, top(b!)[1] - 340];
+    const to: [number, number] = b !== null ? top(b) : [from[0] + 160, from[1] - 380];
+    setKumoFly({ from, to, target: b, key: Date.now() });
+    const t = window.setTimeout(() => setKumoFly(null), KUMO_FLY_MS + 60);
+    return () => window.clearTimeout(t);
+  }, [game.kumo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pops = useBuildPops(game.owner);
+
+  const labels = getLabels();
+  // 分かれ道の札の場所（先に置いた札とも ぶつからないように 順番に決める）
+  const pills: Record<string, { x: number; y: number }> = {};
+  for (const o of options) {
+    const n = NODE[o];
+    const len = Math.hypot(n.x - target.x, n.y - target.y) || 1;
+    pills[o] = pillSpot(n, (n.x - target.x) / len, (n.y - target.y) / len, n.kind === 'station' ? 38 : 28, target, labels[o] ? labelBox(n, labels[o]) : null, Object.values(pills));
+  }
+
   const transform = `translate(${size.w / 2}px, ${size.h / 2}px) scale(${cam.z}) translate(${-cam.x}px, ${-cam.y}px)`;
 
   return (
@@ -175,13 +239,43 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
       onClick={onTap}
     >
       <svg width={size.w} height={size.h} className="board-svg">
-        <g style={{ transform, transition: dragging ? 'none' : 'transform 0.45s ease' }}>
+        <g style={{ transform, transition: dragging ? 'none' : `transform ${slowCam ? 1.2 : 0.45}s ease-in-out` }}>
           <MapLayer />
+          {/* おまつり会場の発表：後ろから光がさす */}
+          {focus && (
+            <g key={`rays-${focus}`} transform={`translate(${NODE[focus].x} ${NODE[focus].y})`} pointerEvents="none">
+              <g className="fest-rays">
+                {Array.from({ length: 12 }, (_, i) => (
+                  <path key={i} d="M0,0 L-16,-170 L16,-170 Z" transform={`rotate(${i * 30})`} fill="#fff6b0" />
+                ))}
+              </g>
+            </g>
+          )}
           {/* 止まれるマスの光（マスの後ろ） */}
           {showEnds.map((id) => (
             <circle key={id} cx={NODE[id].x} cy={NODE[id].y} r={NODE[id].kind === 'station' ? 50 : 38} fill="#fff27a" opacity={0.9} className="reach-glow" />
           ))}
-          <Squares owner={game.owner} colors={colors} destination={game.destination} />
+          <Squares owner={game.owner} colors={colors} destination={game.destination} pops={pops} />
+
+          {/* おまつり会場の発表：ちょうちんが 順番に灯る */}
+          {focus && (
+            <g key={`lights-${focus}`} transform={`translate(${NODE[focus].x} ${NODE[focus].y})`} pointerEvents="none">
+              {Array.from({ length: 10 }, (_, i) => {
+                const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+                return (
+                  <g key={i} transform={`translate(${(Math.cos(a) * 80).toFixed(1)} ${(Math.sin(a) * 66).toFixed(1)})`}>
+                    <g className="lantern" style={{ animationDelay: `${0.9 + i * 0.08}s` }}>
+                      <circle r={15} fill="#ffd45a" className="lantern-glow" />
+                      <rect x={-5} y={-13} width={10} height={4} rx={1} fill="#4a3426" />
+                      <ellipse rx={8.5} ry={10.5} fill="#ff5a5a" stroke="#4a3426" strokeWidth={2} />
+                      <path d="M-8,-3 L8,-3 M-8,3 L8,3" stroke="#ffb0a0" strokeWidth={1.3} />
+                      <rect x={-5} y={9} width={10} height={4} rx={1} fill="#4a3426" />
+                    </g>
+                  </g>
+                );
+              })}
+            </g>
+          )}
 
           {/* 止まれるマスの輪 */}
           {showEnds.map((id) => {
@@ -211,6 +305,7 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
             if (voyage && voyage.player === q.id) return null;
             const isCur = q.id === p.id;
             const moving = isCur && ph.t === 'moving';
+            const hasKumo = game.kumo === q.id && !(kumoFly && kumoFly.target === q.id);
             return (
               <g key={q.id} data-player={q.id} className="piece" style={{ transform: `translate(${x}px, ${y}px)`, transition: 'transform 0.2s ease-out' }}>
                 <ellipse cx={0} cy={2} rx={22} ry={8} fill="#000" opacity={0.2} />
@@ -219,9 +314,18 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
                   <svg x={-PIECE_W / 2} y={-PIECE_W * 1.12 + 6} width={PIECE_W} height={PIECE_W * 1.12} viewBox={VIEWBOX} overflow="visible">
                     <CharShape id={q.charId} expr={game.kumo === q.id ? 'sad' : 'normal'} />
                   </svg>
-                  {game.kumo === q.id && (
+                  {hasKumo && (
                     <g className="kumo-float">
-                      <svg x={-24} y={-PIECE_W * 1.12 - 34} width={48} height={54} viewBox={VIEWBOX} overflow="visible">
+                      {/* 雨：頭の上に ぽつぽつ */}
+                      <g className="kumo-rain" transform={`translate(0 ${KUMO_Y + 50})`}>
+                        {[-16, -5, 6, 16].map((dx, i) => (
+                          <g key={i} style={{ animationDelay: `${i * 0.17}s` }}>
+                            <line x1={dx} x2={dx - 3.5} y1={0} y2={14} className="drop-edge" />
+                            <line x1={dx} x2={dx - 3.5} y1={0} y2={14} />
+                          </g>
+                        ))}
+                      </g>
+                      <svg x={-29} y={KUMO_Y} width={58} height={65} viewBox={VIEWBOX} overflow="visible">
                         <CharShape id="kumo" expr="happy" />
                       </svg>
                     </g>
@@ -233,7 +337,7 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
                   )}
                 </g>
                 {moving && ph.steps > 0 && (
-                  <g transform={`translate(0 ${-PIECE_W * 1.12 - (game.kumo === q.id ? 44 : 6)})`}>
+                  <g transform={`translate(0 ${-PIECE_W * 1.12 - (game.kumo === q.id ? 58 : 6)})`}>
                     <rect x={-34} y={-30} width={68} height={30} rx={15} fill="#ff7a45" stroke="#fff" strokeWidth={3} />
                     <text className="steps-left" y={-9}>
                       あと{ph.steps}
@@ -244,41 +348,50 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
             );
           })}
 
+          <BuildPops pops={pops} colors={colors} />
           {voyage && <Voyage key={voyage.key} info={voyage} charId={game.players[voyage.player].charId} />}
+          {kumoFly && <KumoFlight key={kumoFly.key} from={kumoFly.from} to={kumoFly.to} leaving={kumoFly.target === null} />}
 
           {/* 止まれるマスの押せる範囲（コマより手前） */}
           {showEnds.map((id) => (
             <circle key={id} data-goal={id} cx={NODE[id].x} cy={NODE[id].y} r={40} fill="transparent" className="reach-hit" />
           ))}
 
-          {/* 分かれ道の矢印（コマより手前に、道の方向へ少し離して置く） */}
+          {/*
+            分かれ道：となりのマスを 自分の色の輪でかこみ、外側に 進む向きの矢印と 会場までのマス数を出す。
+            マスそのものは かくさないので、何のマス・何の駅か 見える。
+          */}
           {options.map((o) => {
             const n = NODE[o];
             const len = Math.hypot(n.x - target.x, n.y - target.y) || 1;
             const ux = (n.x - target.x) / len;
             const uy = (n.y - target.y) / len;
-            const ax = target.x + ux * 96;
-            const ay = target.y + uy * 96;
             const ang = (Math.atan2(uy, ux) * 180) / Math.PI;
+            const rr = n.kind === 'station' ? 38 : 28;
+            const isEnd = showEnds.includes(o);
             const d = dist(o, game.destination);
             const best = d === bestDist;
+            const tab = { x: n.x + ux * (rr + 3), y: n.y + uy * (rr + 3) };
+            const pill = pills[o];
+            const pick = () => (isEnd ? onGoal(o) : onChoose(o));
             return (
               <g
                 key={o}
-                className="dir-arrow"
+                className="dir-opt"
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (!moved.current) onChoose(o);
+                  if (!moved.current) pick();
                 }}
               >
-                <path d={`M${target.x + ux * 30},${target.y + uy * 30} L${ax},${ay}`} stroke={myColor} strokeWidth={6} strokeDasharray="2 10" strokeLinecap="round" />
-                <g transform={`translate(${ax} ${ay})`}>
-                  <circle r={44} fill="transparent" />
-                  <circle r={29} className="dir-pulse" fill="none" stroke={myColor} strokeWidth={6} />
-                  <circle r={25} fill="#fff" stroke={myColor} strokeWidth={6} />
-                  <path d="M-10,-10 L11,0 L-10,10 Z" transform={`rotate(${ang})`} fill={myColor} stroke="#4a3426" strokeWidth={2.5} strokeLinejoin="round" />
+                <circle cx={n.x} cy={n.y} r={rr + 14} fill="transparent" />
+                {!isEnd && <circle cx={n.x} cy={n.y} r={rr} fill="none" stroke={myColor} strokeWidth={5} className="dir-ring" />}
+                <g transform={`translate(${tab.x.toFixed(1)} ${tab.y.toFixed(1)}) rotate(${ang.toFixed(1)})`}>
+                  <g className="dir-tab">
+                    <circle r={14} fill={myColor} stroke="#fff" strokeWidth={3} />
+                    <path d="M-5,-7 L7,0 L-5,7 Z" fill="#fff" stroke="#4a3426" strokeWidth={1.5} strokeLinejoin="round" />
+                  </g>
                 </g>
-                <g transform={`translate(${ax + ux * 46} ${ay + uy * 40})`}>
+                <g transform={`translate(${pill.x.toFixed(1)} ${pill.y.toFixed(1)})`}>
                   <rect x={-30} y={-14} width={60} height={27} rx={13.5} fill={best ? '#2e9e5b' : '#4a3426'} stroke="#fff" strokeWidth={2.5} />
                   <text className="dir-dist" y={6}>
                     🏮{d}
@@ -289,7 +402,83 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
           })}
         </g>
       </svg>
+      {focus && <div key={`spot-${focus}`} className="fest-spot" />}
     </div>
+  );
+}
+
+/**
+ * 分かれ道の「会場まで○マス」の札を置く場所。
+ * 道の先には次のマスがあるので、まず道の横。ほかのマス・駅の名前・今いるマスと ぶつからない所をえらぶ。
+ */
+function pillSpot(
+  n: { x: number; y: number },
+  ux: number,
+  uy: number,
+  rr: number,
+  from: { x: number; y: number },
+  label: { x0: number; x1: number; y0: number; y1: number } | null,
+  taken: { x: number; y: number }[],
+) {
+  const at = (vx: number, vy: number, k: number) => ({ x: n.x + vx * k, y: n.y + vy * k });
+  const d = Math.SQRT1_2;
+  const cands = [
+    at(-uy, ux, rr + 32),
+    at(uy, -ux, rr + 32),
+    at(d * (ux - uy), d * (uy + ux), rr + 36),
+    at(d * (ux + uy), d * (uy - ux), rr + 36),
+    at(ux, uy, rr + 44),
+  ];
+  const hits = (c: { x: number; y: number }) => {
+    let k = 0;
+    // 今いるマスと、その上のコマ・「あと○」の札
+    if (Math.abs(c.x - from.x) < 70 && c.y > from.y - 135 && c.y < from.y + 40) k += 3;
+    for (const o of NODES) if (Math.abs(o.x - c.x) < 54 && Math.abs(o.y - c.y) < 40 && (o.x !== n.x || o.y !== n.y)) k++;
+    for (const t of taken) if (Math.abs(t.x - c.x) < 66 && Math.abs(t.y - c.y) < 32) k += 4;
+    if (label && c.x + 30 > label.x0 && c.x - 30 < label.x1 && c.y + 14 > label.y0 && c.y - 14 < label.y1) k += 2;
+    return k;
+  };
+  let best = cands[0];
+  let bestHits = Infinity;
+  for (const c of cands) {
+    const h = hits(c);
+    if (h < bestHits) {
+      bestHits = h;
+      best = c;
+    }
+  }
+  return best;
+}
+
+/** くもすけが 空を飛んで移動する（ふわっと山なりに） */
+function KumoFlight({ from, to, leaving }: { from: [number, number]; to: [number, number]; leaving: boolean }) {
+  const ref = useRef<SVGGElement>(null);
+  useEffect(() => {
+    const t0 = performance.now();
+    const cx = (from[0] + to[0]) / 2;
+    const cy = Math.min(from[1], to[1]) - 110;
+    let raf = 0;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - t0) / KUMO_FLY_MS);
+      const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+      const x = (1 - e) * (1 - e) * from[0] + 2 * (1 - e) * e * cx + e * e * to[0];
+      const y = (1 - e) * (1 - e) * from[1] + 2 * (1 - e) * e * cy + e * e * to[1];
+      const el = ref.current;
+      if (el) {
+        el.setAttribute('transform', `translate(${x} ${y})`);
+        if (leaving) el.setAttribute('opacity', String(1 - e));
+      }
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [from, to, leaving]);
+  return (
+    <g ref={ref} transform={`translate(${from[0]} ${from[1]})`} pointerEvents="none">
+      <svg x={-28} y={-34} width={56} height={63} viewBox={VIEWBOX} overflow="visible">
+        <CharShape id="kumo" expr={leaving ? 'sad' : 'happy'} />
+      </svg>
+    </g>
   );
 }
 

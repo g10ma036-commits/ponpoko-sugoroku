@@ -1,8 +1,9 @@
-// マスと駅。駅の下には物件の持ち主を色の点で表示する。
+// マスと駅。駅の下には物件の数だけ小さな家を並べ、買われた家は持ち主の色になる。
+// 物件が買われると、駅に大きな家が にょきっと建ち、小さな家の場所へ すいこまれる。
 // ひとりじめされた駅は、金色のふちと 持ち主の色の旗で目立たせる。
-import { memo } from 'react';
-import { NODES, REGIONS } from '../../data/map';
-import { PROPS_BY_STATION } from '../../data/properties';
+import { memo, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { NODE, NODES, REGIONS } from '../../data/map';
+import { PROP, PROPS_BY_STATION } from '../../data/properties';
 import { getLabels } from './labels';
 
 export const SQUARE_STYLE: Record<string, { fill: string; label: string; name: string }> = {
@@ -32,6 +33,8 @@ interface Props {
   owner: Record<string, number>;
   colors: string[];
   destination: string;
+  /** いま建っている最中の物件（小さな家を あとから にょきっと出す） */
+  pops?: Pop[];
 }
 
 const squares = NODES.filter((n) => n.kind !== 'station');
@@ -47,7 +50,50 @@ const MONO_AT: Record<string, { x: number; y: number; dir: 1 | -1 }> = {
   left: { x: -18, y: -28, dir: -1 },
 };
 
-export const Squares = memo(function Squares({ owner, colors, destination }: Props) {
+/** 小さな家（物件1件ぶん） */
+const HOUSE = 'M-6,5 L-6,-1 L0,-6.5 L6,-1 L6,5 Z';
+
+export interface Pop {
+  key: number;
+  station: string;
+  owner: number;
+  /** 何番目の物件か（小さな家の場所） */
+  slot: number;
+  props: string[];
+}
+
+/** 新しく買われた物件を見つけて、建つ演出のリストを返す */
+export function useBuildPops(owner: Record<string, number>): Pop[] {
+  const [pops, setPops] = useState<Pop[]>([]);
+  const prevOwner = useRef(owner);
+  useEffect(() => {
+    const before = prevOwner.current;
+    prevOwner.current = owner;
+    if (before === owner) return;
+    const fresh = Object.keys(owner).filter((id) => before[id] !== owner[id]);
+    if (fresh.length === 0) return;
+    const byStation = new Map<string, string[]>();
+    for (const id of fresh) {
+      const st = PROP[id]?.station;
+      if (st) byStation.set(st, [...(byStation.get(st) ?? []), id]);
+    }
+    const now = Date.now();
+    const add: Pop[] = [...byStation].map(([station, ids], k) => ({
+      key: now + k,
+      station,
+      owner: owner[ids[0]],
+      slot: PROPS_BY_STATION[station].findIndex((p) => p.id === ids[0]),
+      props: ids,
+    }));
+    setPops((ps) => [...ps, ...add]);
+    window.setTimeout(() => setPops((ps) => ps.filter((x) => !add.includes(x))), 2600);
+  }, [owner]);
+  return pops;
+}
+
+export const Squares = memo(function Squares({ owner, colors, destination, pops = [] }: Props) {
+  const growing = new Set(pops.flatMap((pp) => pp.props));
+
   return (
     <g>
       {squares.map((n) => {
@@ -78,7 +124,7 @@ export const Squares = memo(function Squares({ owner, colors, destination }: Pro
             )}
             {mono !== undefined && <rect x={-33} y={-33} width={66} height={66} rx={19} fill="#ffe27a" stroke="#e0a800" strokeWidth={4} className="mono-glow" />}
             <rect x={-26} y={-23} width={52} height={52} rx={14} fill="#4a3426" opacity={0.25} />
-            <rect x={-26} y={-26} width={52} height={52} rx={14} fill="#fffaf0" stroke={REGIONS[n.region].color} strokeWidth={6} />
+            <rect data-st-core={n.id} x={-26} y={-26} width={52} height={52} rx={14} fill="#fffaf0" stroke={REGIONS[n.region].color} strokeWidth={6} />
             {/* 駅の建物マーク */}
             <path d="M-13,10 L-13,-3 L0,-13 L13,-3 L13,10 Z" fill={isDest ? '#ff6b6b' : '#f29a4a'} stroke="#4a3426" strokeWidth={2.5} strokeLinejoin="round" />
             <rect x={-4} y={1} width={8} height={9} fill="#fff" stroke="#4a3426" strokeWidth={2} />
@@ -89,11 +135,22 @@ export const Squares = memo(function Squares({ owner, colors, destination }: Pro
                 {label}
               </text>
             </g>
-            {/* 持ち主の点 */}
+            {/* 物件の小さな家（白は まだだれも持っていない） */}
             <g transform={`translate(${-(props.length - 1) * 7} ${lp.dotsDy})`}>
               {props.map((p, i) => {
                 const o = owner[p.id];
-                return <circle key={p.id} cx={i * 14} r={5.5} fill={o === undefined ? '#ffffff' : colors[o]} stroke="#4a3426" strokeWidth={2} />;
+                return (
+                  <g key={p.id} transform={`translate(${i * 14} 0)`}>
+                    <path
+                      d={HOUSE}
+                      className={growing.has(p.id) ? 'slot-grow' : undefined}
+                      fill={o === undefined ? '#ffffff' : colors[o]}
+                      stroke="#4a3426"
+                      strokeWidth={2}
+                      strokeLinejoin="round"
+                    />
+                  </g>
+                );
               })}
             </g>
             {mono !== undefined && (
@@ -125,3 +182,38 @@ export const Squares = memo(function Squares({ owner, colors, destination }: Pro
     </g>
   );
 });
+
+/** 物件が建つ演出（コマより手前に出す）。大きな家が コマの頭の上に にょきっと建ち、駅の小さな家の場所へ すいこまれる */
+export function BuildPops({ pops, colors }: { pops: Pop[]; colors: string[] }) {
+  return (
+    <g>
+      {pops.map((pp) => {
+        const n = NODE[pp.station];
+        const lp = getLabels()[pp.station];
+        const count = PROPS_BY_STATION[pp.station].length;
+        const sx = -(count - 1) * 7 + pp.slot * 14;
+        const c = colors[pp.owner] ?? '#f29a4a';
+        return (
+          <g key={pp.key} transform={`translate(${n.x} ${n.y})`} pointerEvents="none">
+            <g transform="translate(0 -100)">
+              <g className="build-spark">
+                {Array.from({ length: 10 }, (_, i) => (
+                  <path key={i} d="M0,-30 L0,-46" transform={`rotate(${i * 36})`} stroke={i % 2 ? '#ffd45a' : c} strokeWidth={5} strokeLinecap="round" />
+                ))}
+              </g>
+            </g>
+            <g className="build-pop" style={{ ['--tx' as string]: `${sx}px`, ['--ty' as string]: `${lp.dotsDy + 89}px` } as CSSProperties}>
+              <g transform="translate(0 -100)">
+                <path d="M-24,16 L-24,-6 L0,-26 L24,-6 L24,16 Z" fill={c} stroke="#4a3426" strokeWidth={4} strokeLinejoin="round" />
+                <path d="M-29,-3 L0,-29 L29,-3" fill="none" stroke="#4a3426" strokeWidth={6} strokeLinecap="round" strokeLinejoin="round" />
+                <rect x={-7} y={2} width={14} height={14} rx={2} fill="#fff6dd" stroke="#4a3426" strokeWidth={3} />
+                <rect x={-19} y={-4} width={9} height={8} rx={1.5} fill="#bfe6f7" stroke="#4a3426" strokeWidth={2.5} />
+                <rect x={10} y={-4} width={9} height={8} rx={1.5} fill="#bfe6f7" stroke="#4a3426" strokeWidth={2.5} />
+              </g>
+            </g>
+          </g>
+        );
+      })}
+    </g>
+  );
+}

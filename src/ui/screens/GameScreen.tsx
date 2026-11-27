@@ -10,7 +10,11 @@ import type { GameState, Msg } from '../../engine/types';
 import { useApp } from '../../store/gameStore';
 import { Board, type VoyageInfo } from '../board/Board';
 import { Btn, CharFace, Sheet } from '../common';
+import { CoinFlight, type Flight } from '../hud/CoinFlight';
+import { CUTIN_MS, CutIn } from '../hud/CutIn';
 import { DiceOverlay } from '../hud/DiceOverlay';
+import { Opening } from '../hud/Opening';
+import { Weather } from '../hud/Weather';
 import { MessageDialog } from '../hud/MessageDialog';
 import { BuySheet, CardSheet, FerrySheet, NewsSheet, PlayerSheet, SellSheet, ShopSheet, SquareSheet } from '../hud/Sheets';
 import { TopBar } from '../hud/TopBar';
@@ -38,12 +42,15 @@ export function GameScreen() {
   const tipsSeen = useApp((s) => s.tipsSeen);
   const markTip = useApp((s) => s.markTip);
   const zukanNews = useApp((s) => s.zukanNews);
+  const opening = useApp((s) => s.opening);
+  const endOpening = useApp((s) => s.endOpening);
 
   const [overview, setOverview] = useState(false);
   // node の go が true なら「光るマス」を押したとき（そこへ行くか聞く）
   const [sheet, setSheet] = useState<null | 'cards' | 'menu' | 'news' | { player: number } | { node: string; go?: boolean }>(null);
   const [voyage, setVoyage] = useState<VoyageInfo | null>(null);
   const [handoffDone, setHandoffDone] = useState<string | null>(null);
+  const [flights, setFlights] = useState<Flight[]>([]);
   const [toasts, setToasts] = useState<{ id: number; text: string; sub?: string; color: string }[]>([]);
   const toast = (text: string, color: string, sub?: string, ms = 2400) => {
     const id = Date.now() + Math.random();
@@ -63,6 +70,26 @@ export function GameScreen() {
   // 説明やメニューを見ているあいだは、人間の番を止めておく
   const paused = sheet !== null && !p.isCpu;
 
+  // ---- 手番のカットイン（番のはじめのメッセージを読み終わってから。手渡しの画面があるときと はやおくり中は出さない）
+  const [cutin, setCutin] = useState<string | null>(null);
+  const cutinDone = useRef('');
+  const cutinMs = CUTIN_MS / Math.min(Math.max(speed, 1), 1.7);
+  const wantCutin = prefs.fx && !opening && !msg && ph.t === 'action' && !needHandoff && (p.isCpu || humans < 2) && speed < 4 && cutinDone.current !== turnKey;
+  useEffect(() => {
+    if (!wantCutin) return;
+    cutinDone.current = turnKey;
+    setCutin(turnKey);
+  }, [wantCutin, turnKey]);
+  useEffect(() => {
+    if (!cutin) return;
+    const t = window.setTimeout(() => setCutin(null), cutinMs);
+    return () => window.clearTimeout(t);
+  }, [cutin]); // eslint-disable-line react-hooks/exhaustive-deps
+  // サイコロをふったら、カットインは すぐ消す
+  useEffect(() => {
+    if (ph.t !== 'action') setCutin(null);
+  }, [ph.t]);
+
   // ---- 場面に合わせてBGMを切りかえる（決算・くもすけの番・だれかが おまつり会場の近く）
   const nearGoal = game.players.some((q) => dist(q.pos, game.destination) <= 6);
   const bgm: BgmMode = gameOver || msg?.settlement ? 'festival' : game.kumo !== null && game.kumo === game.turn ? 'kumo' : nearGoal ? 'near' : 'normal';
@@ -78,10 +105,12 @@ export function GameScreen() {
 
   // ---- ゲームを自動で進める（CPUの考え、1マスずつの移動、メッセージの自動送り）
   useEffect(() => {
-    if (gameOver || paused || voyage) return;
+    if (gameOver || paused || voyage || opening || cutin) return;
     let t: number | undefined;
     if (msg) {
-      if (isAuto(game, msg)) t = window.setTimeout(() => dispatch({ t: 'ACK' }), (msg.settlement ? 3200 : 1500) / speed);
+      // おみくじの演出・会場へ飛ぶカメラは 少し長めに見せる
+      const wait = msg.settlement ? 3200 : msg.fortune ? 2900 : msg.focus ? 2600 : 1500;
+      if (isAuto(game, msg)) t = window.setTimeout(() => dispatch({ t: 'ACK' }), wait / speed);
     } else if (!needHandoff) {
       if (ph.t === 'moving' && !ph.options) {
         t = window.setTimeout(() => dispatch({ t: 'STEP' }), (ph.walked === 0 ? 1350 : 240) / speed);
@@ -91,7 +120,7 @@ export function GameScreen() {
       }
     }
     return () => window.clearTimeout(t);
-  }, [game, msg, needHandoff, speed, dispatch, p.isCpu, ph, gameOver, paused, voyage]);
+  }, [game, msg, needHandoff, speed, dispatch, p.isCpu, ph, gameOver, paused, voyage, opening, cutin]);
 
   // ---- 1マス進むたびに音、CPUが物件を買ったらお知らせ
   const prev = useRef(game);
@@ -109,6 +138,19 @@ export function GameScreen() {
       window.setTimeout(() => setVoyage(null), ms + 200);
     }
     const bought = Object.keys(game.owner).filter((id) => before.owner[id] === undefined);
+    // 物件を買ったら、小判が所持金から駅へ飛んでいき、駅に家が建つ
+    if (bought.length > 0) {
+      const buyer = game.owner[bought[0]];
+      const station = PROP[bought[0]].station;
+      window.setTimeout(() => sfx.pop(), 480);
+      requestAnimationFrame(() => {
+        const a = document.querySelector(`.chip[data-player="${buyer}"]`)?.getBoundingClientRect();
+        const b = document.querySelector(`[data-st-core="${station}"]`)?.getBoundingClientRect();
+        if (!a || !b) return;
+        const flight = { key: Date.now() + Math.random(), from: { x: a.left + a.width / 2, y: a.top + a.height / 2 }, to: { x: b.left + b.width / 2, y: b.top + b.height / 2 } };
+        setFlights((fs) => [...fs.slice(-3), flight]);
+      });
+    }
     if (bought.length > 0 && p.isCpu) {
       sfx.buy();
       const quip = quipFor(p.charId, 'buy', bought[0]);
@@ -130,7 +172,7 @@ export function GameScreen() {
   if (gameOver) return <ResultScreen game={game} />;
 
   const lastRollDice = ph.t === 'moving' ? ph.dice : [];
-  const tip = prefs.tutorial && !paused ? currentTip(game, humanTurn, ends.length, tipsSeen) : null;
+  const tip = prefs.tutorial && !paused && !opening && !cutin ? currentTip(game, humanTurn, ends.length, tipsSeen) : null;
 
   return (
     <div className="game">
@@ -157,7 +199,9 @@ export function GameScreen() {
             setSheet({ player: id });
           }}
           voyage={voyage}
+          focus={opening ? undefined : msg?.focus}
         />
+        {prefs.fx && <Weather month={game.month} />}
         <BoardTools
           overview={overview}
           onOverview={() => setOverview((v) => !v)}
@@ -227,6 +271,7 @@ export function GameScreen() {
               進むはやさ：{['', 'ゆっくり', 'ふつう', 'はやい'][prefs.speed]}
             </Btn>
             <Btn onClick={() => setPrefs({ tutorial: !prefs.tutorial })}>はじめての案内：{prefs.tutorial ? 'ON' : 'OFF'}</Btn>
+            <Btn onClick={() => setPrefs({ fx: !prefs.fx })}>豪華な演出：{prefs.fx ? 'ON' : 'OFF'}</Btn>
             <Btn variant="danger" onClick={quitToTitle}>
               タイトルにもどる
             </Btn>
@@ -248,7 +293,13 @@ export function GameScreen() {
         </div>
       )}
 
-      {msg && !voyage && <MessageDialog game={game} msg={msg} auto={isAuto(game, msg)} onNext={() => dispatch({ t: 'ACK' })} />}
+      {msg && !voyage && !opening && <MessageDialog game={game} msg={msg} auto={isAuto(game, msg)} speed={speed} onNext={() => dispatch({ t: 'ACK' })} />}
+
+      {cutin && <CutIn key={cutin} player={p} sub={`${game.year}年目 ${game.month}月${p.isCpu ? '・CPU' : ''}`} ms={cutinMs} />}
+      {flights.map((fl) => (
+        <CoinFlight key={fl.key} flight={fl} onDone={(k) => setFlights((fs) => fs.filter((x) => x.key !== k))} />
+      ))}
+      {opening && <Opening game={game} onDone={endOpening} />}
     </div>
   );
 }
@@ -299,6 +350,9 @@ function ActionBar({ game, humanTurn, ends, sailing, fastForward, onRoll, onCard
     let main = `のこり ${ph.steps} マス`;
     if (humanTurn && ph.goal) {
       main = `🚩 えらんだマスへ すすみ中（のこり ${ph.steps}）`;
+    } else if (humanTurn && ph.options && ph.steps === 1) {
+      main = '✨ 止まりたいマスを 押してね';
+      sub = 'マスの説明を 見てから 進めるよ';
     } else if (humanTurn && ph.options) {
       main = '✨ 光るマスを押すと 一気に進むよ';
       sub = '矢印で 1マスずつ 道をえらんでもOK';
