@@ -201,6 +201,8 @@ export type Action =
   | { t: 'GOAL'; to: string }
   | { t: 'RIDE' }
   | { t: 'BUY'; prop: string }
+  /** えらんだ物件を まとめて買って、その駅でのお買い物を おわる */
+  | { t: 'BUY_SET'; props: string[] }
   | { t: 'BUY_CARD'; card: CardId }
   | { t: 'SELL'; prop: string }
   | { t: 'DONE' }

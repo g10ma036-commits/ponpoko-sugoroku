@@ -53,10 +53,10 @@ function NewsBadge({ game, pr }: { game: GameState; pr: Property }) {
   );
 }
 
-function PropRow({ pr, right, game }: { pr: Property; right: ReactNode; game: GameState }) {
+function PropRow({ pr, right, game, picked = false }: { pr: Property; right: ReactNode; game: GameState; picked?: boolean }) {
   const cat = CATEGORY_LABEL[pr.cat];
   return (
-    <div className="prop-row">
+    <div className={`prop-row ${picked ? 'picked' : ''}`}>
       <div className="prop-main">
         <div className="prop-name">
           <span className="cat" style={{ background: cat.color }}>
@@ -154,70 +154,129 @@ export function BuySheet({ game, station, dispatch }: { game: GameState; station
   const free = props.filter((pr) => game.owner[pr.id] === undefined);
   const others = props.some((pr) => game.owner[pr.id] !== undefined && game.owner[pr.id] !== p.id);
   const mono = isMonopoly(game, station, p.id);
-  // 「買う」を押したら、まず確認を出す
-  const [asking, setAsking] = useState<Property | null>(null);
-  const completes = asking !== null && props.every((pr) => pr.id === asking.id || game.owner[pr.id] === p.id);
+  // えらんだ物件（最後に まとめて買う）
+  const [picked, setPicked] = useState<string[]>([]);
+  const [asking, setAsking] = useState(false);
+  const chosen = free.filter((pr) => picked.includes(pr.id));
+  const total = chosen.reduce((a, pr) => a + pr.price, 0);
+  const allCost = free.reduce((a, pr) => a + pr.price, 0);
+  // 残りを ぜんぶ買えば ひとりじめになる（ほかの人が持っていなくて、お金が足りる）
+  const canMono = !others && free.length > 0 && allCost <= p.money;
+  const completes = !others && chosen.length > 0 && chosen.length === free.length;
+  const toggle = (id: string) => setPicked((xs) => (xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id]));
+  const buy = (ids: string[]) => {
+    setAsking(false);
+    if (dispatch({ t: 'BUY_SET', props: ids })) sfx.buy();
+  };
+  const buyAll = () => {
+    setPicked(free.map((pr) => pr.id));
+    setAsking(true);
+  };
+
   return (
     <>
-    <Sheet
-      title={<>🏠 {stationName(station)}の物件</>}
-      footer={
-        <>
-          <div className="foot-money">
-            所持金 <Money value={p.money} />
-          </div>
-          <Btn variant="primary" onClick={() => dispatch({ t: 'DONE' })}>
-            {free.length === props.length ? '買わずに すすむ' : 'おわる'}
-          </Btn>
-        </>
-      }
-    >
-      <div className={`hint ${mono ? 'good' : ''}`}>
-        {mono ? '🎉 ひとりじめ中！ 決算の収益が2倍' : others ? 'ほかの人も持っている駅です' : '全部買うと「ひとりじめ」で収益2倍！'}
-      </div>
-      <StationNews game={game} station={station} />
-      {props.map((pr) => {
-        const o = game.owner[pr.id];
-        const right =
-          o !== undefined ? (
-            <span className="owner" style={{ borderColor: CHARACTERS[game.players[o].charId].color }}>
-              <CharFace id={game.players[o].charId} size={26} />
-              {o === p.id ? 'あなた' : game.players[o].name}
-            </span>
+      <Sheet
+        title={<>🏠 {stationName(station)}の物件</>}
+        footer={
+          chosen.length === 0 ? (
+            <>
+              <div className="foot-money">
+                所持金 <Money value={p.money} />
+              </div>
+              <Btn variant="primary" onClick={() => dispatch({ t: 'DONE' })}>
+                {free.length === props.length ? '買わずに すすむ' : 'おわる'}
+              </Btn>
+            </>
           ) : (
-            <Btn variant="primary" disabled={p.money < pr.price} onClick={() => setAsking(pr)}>
-              買う
-            </Btn>
-          );
-        return <PropRow key={pr.id} pr={pr} right={right} game={game} />;
-      })}
-    </Sheet>
-    {asking && (
-      <ConfirmDialog
-        icon="🏠"
-        title={<>「{asking.name}」を 買いますか？</>}
-        okLabel="買う！"
-        onCancel={() => setAsking(null)}
-        onOk={() => {
-          const pr = asking;
-          setAsking(null);
-          if (dispatch({ t: 'BUY', prop: pr.id })) sfx.buy();
-        }}
+            <div className="buy-foot">
+              <div className="foot-money">
+                所持金 <Money value={p.money} /> → 買ったあと <Money value={p.money - total} />
+              </div>
+              <div className="buy-foot-btns">
+                <Btn onClick={() => setPicked([])}>えらびなおす</Btn>
+                <Btn variant="primary" className="buy-go" onClick={() => setAsking(true)}>
+                  {chosen.length}件 買う（{formatRyo(total)}）
+                </Btn>
+              </div>
+            </div>
+          )
+        }
       >
-        <div className="confirm-rows">
-          <div>
-            値段 <b>{formatRyo(asking.price)}</b>
+        {mono ? (
+          <div className="hint good">🎉 ひとりじめ中！ 決算の収益が2倍</div>
+        ) : canMono ? (
+          <button type="button" className="mono-offer" onClick={buyAll}>
+            <span className="mono-offer-main">👑 のこり{free.length}件 ぜんぶ買って ひとりじめ する？</span>
+            <span className="mono-offer-sub">合計 {formatRyo(allCost)} ・ 決算の収益が2倍！</span>
+          </button>
+        ) : (
+          <div className="hint">
+            {others ? 'ほかの人も持っている駅です（ひとりじめは できない）' : `全部買うと「ひとりじめ」で収益2倍！（あと ${formatRyo(allCost - p.money)} たりない）`}
           </div>
-          <div>
-            年収益 <b className="inc">{formatRyo(propIncome(game, asking))}</b>
+        )}
+        {free.length > 0 && <div className="pick-note">買いたい物件を えらんでね（いくつでも）。最後に まとめて買うよ。</div>}
+        <StationNews game={game} station={station} />
+        {props.map((pr) => {
+          const o = game.owner[pr.id];
+          if (o !== undefined) {
+            const right = (
+              <span className="owner" style={{ borderColor: CHARACTERS[game.players[o].charId].color }}>
+                <CharFace id={game.players[o].charId} size={26} />
+                {o === p.id ? 'あなた' : game.players[o].name}
+              </span>
+            );
+            return <PropRow key={pr.id} pr={pr} right={right} game={game} />;
+          }
+          const on = picked.includes(pr.id);
+          const can = on || total + pr.price <= p.money;
+          const right = (
+            <button type="button" className={`pick ${on ? 'on' : ''}`} disabled={!can} aria-pressed={on} onClick={() => toggle(pr.id)}>
+              {on ? '✓ えらんだ' : can ? 'えらぶ' : '買えない'}
+            </button>
+          );
+          return <PropRow key={pr.id} pr={pr} right={right} game={game} picked={on} />;
+        })}
+      </Sheet>
+      {asking && chosen.length > 0 && (
+        <ConfirmDialog
+          icon={completes ? '👑' : '🏠'}
+          title={chosen.length === 1 ? <>「{chosen[0].name}」を 買いますか？</> : <>{chosen.length}件 まとめて 買いますか？</>}
+          okLabel="買う！"
+          onCancel={() => setAsking(false)}
+          onOk={() => buy(chosen.map((pr) => pr.id))}
+        >
+          {chosen.length > 1 && (
+            <ul className="confirm-list">
+              {chosen.map((pr) => (
+                <li key={pr.id}>
+                  <span>{pr.name}</span>
+                  <b>{formatRyo(pr.price)}</b>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="confirm-rows">
+            <div>
+              {chosen.length > 1 ? '合計' : '値段'} <b>{formatRyo(total)}</b>
+            </div>
+            <div>
+              年収益 <b className="inc">+{formatRyo(chosen.reduce((a, pr) => a + propIncome(game, pr), 0))}</b>
+            </div>
+            <div>
+              買ったあとの 所持金 <b>{formatRyo(p.money - total)}</b>
+            </div>
           </div>
-          <div>
-            買ったあとの 所持金 <b>{formatRyo(p.money - asking.price)}</b>
-          </div>
-        </div>
-        {completes && <div className="hint good">🎉 これで「ひとりじめ」！ 収益が2倍になるよ</div>}
-      </ConfirmDialog>
-    )}
+          {completes && <div className="hint good">🎉 これで「ひとりじめ」！ 収益が2倍になるよ</div>}
+          {!completes && canMono && (
+            <button type="button" className="mono-offer small" onClick={() => buy(free.map((pr) => pr.id))}>
+              <span className="mono-offer-main">👑 ぜんぶ買って ひとりじめ する</span>
+              <span className="mono-offer-sub">
+                のこり{free.length}件・合計 {formatRyo(allCost)}（買ったあと {formatRyo(p.money - allCost)}）
+              </span>
+            </button>
+          )}
+        </ConfirmDialog>
+      )}
     </>
   );
 }

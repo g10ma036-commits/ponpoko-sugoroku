@@ -141,6 +141,33 @@ describe('ゲームの進行', () => {
     expect(reduce(s, { t: 'BUY', prop: PROPS_BY_STATION['ocha'][0].id })).toBe(s);
   });
 
+  it('えらんだ物件を まとめて買える（合計が払えないと買えない）', () => {
+    const base = structuredClone(ackAll(createGame(cfg(31))));
+    const props = PROPS_BY_STATION['shika'];
+    base.economy = undefined;
+    base.owner = {};
+    base.phase = { t: 'buy', station: 'shika' };
+    const two = props.slice(0, 2);
+    const total = two[0].price + two[1].price;
+    // 合計にたりないと だめ
+    const poor = structuredClone(base);
+    poor.players[0].money = total - 1;
+    expect(reduce(poor, { t: 'BUY_SET', props: two.map((p) => p.id) })).toBe(poor);
+    // ほかの駅の物件・同じ物件2つ・からっぽ は だめ
+    base.players[0].money = 10_000_000;
+    expect(reduce(base, { t: 'BUY_SET', props: [PROPS_BY_STATION['nigiwai'][0].id] })).toBe(base);
+    expect(reduce(base, { t: 'BUY_SET', props: [two[0].id, two[0].id] })).toBe(base);
+    expect(reduce(base, { t: 'BUY_SET', props: [] })).toBe(base);
+    // 2件 まとめて買う → お金が減って、お買い物は おわる
+    const s = act(base, { t: 'BUY_SET', props: two.map((p) => p.id) });
+    expect(two.every((p) => s.owner[p.id] === 0)).toBe(true);
+    expect(s.players[0].money).toBe(10_000_000 - total);
+    expect(s.phase.t === 'buy').toBe(false);
+    // 残りを ぜんぶ まとめて買うと ひとりじめ
+    const all = act(base, { t: 'BUY_SET', props: props.map((p) => p.id) });
+    expect(all.queue.some((m) => m.title === 'ひとりじめ！')).toBe(true);
+  });
+
   it('お金が足りないと物件は買えない', () => {
     let s = ackAll(createGame(cfg()));
     s = structuredClone(s);

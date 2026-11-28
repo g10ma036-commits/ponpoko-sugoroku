@@ -46,14 +46,17 @@ for (let i = 0; i < 60; i++) {
   // パネルが先（残り1マスの分かれ道でマスを押すと、説明と「ここへ行く！」のパネルが 矢印の上に出る）
   if (await page.locator('.sheet').count()) {
     await shot(`08-sheet-${i}`);
-    const buy = page.locator('.sheet .btn-primary:not([disabled])', { hasText: '買う' });
-    if (await buy.count()) {
-      await buy.first().click();
-      // 「買いますか？」の確認
+    // 物件：えらんで → まとめて買う → 「買いますか？」の確認
+    const pick = page.locator('.sheet .pick:not([disabled])');
+    if (await pick.count()) {
+      await pick.first().click();
+      await page.waitForTimeout(200);
+      await page.locator('.sheet-foot .buy-go').click();
       await page.waitForTimeout(250);
       if (!(await page.locator('.confirm-card').count())) errors.push('FAIL: 買う前の確認が出ない');
       await shot(`08-confirm-${i}`);
       await page.locator('.confirm-yes').click();
+      continue;
     }
     await page.waitForTimeout(300);
     const done = page.locator('.sheet-foot .btn-primary');

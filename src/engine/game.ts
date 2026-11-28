@@ -212,6 +212,12 @@ function apply(s: GameState, a: Action): boolean {
 
     case 'buy':
       if (a.t === 'BUY') return buyProperty(s, a.prop, ph.station);
+      if (a.t === 'BUY_SET') {
+        if (!canBuySet(s, a.props, ph.station)) return false;
+        for (const id of a.props) buyProperty(s, id, ph.station);
+        s.phase = { t: 'end' };
+        return true;
+      }
       if (a.t === 'DONE') {
         s.phase = { t: 'end' };
         return true;
@@ -550,6 +556,18 @@ function arrive(s: GameState) {
 }
 
 // ---------------------------------------------------------------- 物件
+
+/** まとめて買えるか：1件以上・同じ物件はなし・どれもこの駅の売り物・合計を払える */
+export function canBuySet(s: GameState, ids: string[], station: string): boolean {
+  if (ids.length === 0 || new Set(ids).size !== ids.length) return false;
+  let total = 0;
+  for (const id of ids) {
+    const pr = PROP[id];
+    if (!pr || pr.station !== station || s.owner[id] !== undefined) return false;
+    total += pr.price;
+  }
+  return total <= cur(s).money;
+}
 
 function buyProperty(s: GameState, propId: string, station: string): boolean {
   const p = cur(s);

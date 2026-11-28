@@ -584,6 +584,113 @@ b {
   width: 100%;
 }
 
+/* 物件を えらぶ（最後に まとめて買う） */
+.pick {
+  font: inherit;
+  font-weight: 900;
+  font-size: 15px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 96px;
+  min-height: 48px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 3px solid var(--ink);
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 3px 0 var(--ink);
+  cursor: pointer;
+}
+.pick.on {
+  background: #2e9e5b;
+  color: #fff;
+}
+.pick:disabled {
+  opacity: 0.45;
+  cursor: default;
+  box-shadow: none;
+}
+.prop-row.picked {
+  background: #eaf8ee;
+  border-radius: 14px;
+  margin: 0 -8px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.pick-note {
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin: 2px 0 4px;
+}
+.mono-offer {
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  margin: 4px 0 8px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 3px solid #e0a800;
+  background: linear-gradient(180deg, #fff3a8, #ffd23f);
+  box-shadow: 0 4px 0 #b88400;
+  color: var(--ink);
+  cursor: pointer;
+  animation: mono-offer 1.6s ease-in-out infinite;
+}
+.mono-offer.small {
+  margin: 0 0 10px;
+  animation: none;
+}
+@keyframes mono-offer {
+  50% {
+    transform: scale(1.02);
+    box-shadow:
+      0 4px 0 #b88400,
+      0 0 16px rgba(255, 210, 63, 0.9);
+  }
+}
+.mono-offer-main {
+  font-size: 15px;
+  font-weight: 900;
+}
+.mono-offer-sub {
+  font-size: 12px;
+  font-weight: 700;
+}
+.buy-foot {
+  width: 100%;
+  display: grid;
+  gap: 6px;
+}
+.buy-foot-btns {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 8px;
+}
+.buy-foot-btns .btn {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+.confirm-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  font-size: 14px;
+  text-align: left;
+}
+.confirm-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 4px;
+  border-bottom: 1px dashed var(--line);
+}
+
 /* 「買いますか？」の確認（パネルの上に出す） */
 .confirm-backdrop {
   position: absolute;
