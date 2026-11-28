@@ -12,7 +12,7 @@ import { Board, type VoyageInfo } from '../board/Board';
 import { Btn, CharFace, Sheet } from '../common';
 import { CoinFlight, type Flight } from '../hud/CoinFlight';
 import { CUTIN_MS, CutIn } from '../hud/CutIn';
-import { DiceOverlay } from '../hud/DiceOverlay';
+import { DICE_SPIN_MS, DiceOverlay } from '../hud/DiceOverlay';
 import { Opening } from '../hud/Opening';
 import { Weather } from '../hud/Weather';
 import { MessageDialog } from '../hud/MessageDialog';
@@ -106,10 +106,20 @@ export function GameScreen() {
 
   // 人間の移動中は、止まれるマスを計算して光らせる
   const moveKey = ph.t === 'moving' && !p.isCpu && ph.steps > 0 ? `${p.pos}|${ph.prev}|${ph.steps}` : '';
-  const ends = useMemo(() => {
+  const allEnds = useMemo(() => {
     if (!moveKey || ph.t !== 'moving') return [];
     return [...reachableEnds(p.pos, ph.prev, ph.steps)];
   }, [moveKey]);
+
+  // サイコロが止まるまでは、止まれるマス・のこりのマス数を見せない（出目がわかってしまうので）
+  const [settledRoll, setSettledRoll] = useState(game.rollId);
+  useEffect(() => {
+    if (game.rollId === settledRoll) return;
+    const t = window.setTimeout(() => setSettledRoll(game.rollId), DICE_SPIN_MS / speed);
+    return () => window.clearTimeout(t);
+  }, [game.rollId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const diceRolling = ph.t === 'moving' && ph.walked === 0 && game.rollId !== settledRoll;
+  const ends = diceRolling ? [] : allEnds;
 
   // ---- ゲームを自動で進める（CPUの考え、1マスずつの移動、メッセージの自動送り）
   useEffect(() => {
@@ -180,7 +190,7 @@ export function GameScreen() {
   if (gameOver) return <ResultScreen game={game} />;
 
   const lastRollDice = ph.t === 'moving' ? ph.dice : [];
-  const tip = prefs.tutorial && !paused && !opening && !cutin ? currentTip(game, humanTurn, ends.length, tipsSeen, ends.includes(game.destination)) : null;
+  const tip = prefs.tutorial && !paused && !opening && !cutin ? currentTip(game, humanTurn && !diceRolling, ends.length, tipsSeen, ends.includes(game.destination)) : null;
 
   return (
     <div className="game">
@@ -189,7 +199,8 @@ export function GameScreen() {
         <Board
           game={game}
           overview={overview}
-          canChoose={humanTurn}
+          canChoose={humanTurn && !diceRolling}
+          rolling={diceRolling}
           ends={ends}
           onChoose={(to) => {
             if (dispatch({ t: 'DIR', to })) sfx.step();
@@ -235,6 +246,7 @@ export function GameScreen() {
         humanTurn={humanTurn}
         ends={ends.length}
         canArrive={ends.includes(game.destination)}
+        rolling={diceRolling}
         sailing={voyage !== null}
         fastForward={fastForward}
         onRoll={() => dispatch({ t: 'ROLL' })}
@@ -331,6 +343,8 @@ interface ActionBarProps {
   ends: number;
   /** おまつり会場に ぴったり止まれる */
   canArrive: boolean;
+  /** サイコロが まだ回っている */
+  rolling: boolean;
   /** フェリーで移動中 */
   sailing: boolean;
   fastForward: boolean;
@@ -339,7 +353,7 @@ interface ActionBarProps {
   onFast: () => void;
 }
 
-function ActionBar({ game, humanTurn, ends, canArrive, sailing, fastForward, onRoll, onCards, onFast }: ActionBarProps) {
+function ActionBar({ game, humanTurn, ends, canArrive, rolling, sailing, fastForward, onRoll, onCards, onFast }: ActionBarProps) {
   const p = game.players[game.turn];
   const ph = game.phase;
   const color = CHARACTERS[p.charId].color;
@@ -367,6 +381,8 @@ function ActionBar({ game, humanTurn, ends, canArrive, sailing, fastForward, onR
         </Btn>
       </div>
     );
+  } else if (ph.t === 'moving' && rolling) {
+    center = <div className="ab-status big">🎲 サイコロ ころころ…</div>;
   } else if (ph.t === 'moving') {
     let sub: string | null = null;
     let main = `のこり ${ph.steps} マス`;

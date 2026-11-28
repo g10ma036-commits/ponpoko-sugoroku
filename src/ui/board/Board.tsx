@@ -10,6 +10,7 @@ import { CharShape, VIEWBOX } from '../../characters/Characters';
 import { CHARACTERS } from '../../data/characters';
 import { routeSamples } from '../../data/japan';
 import { MAP_H, MAP_W, NODE, NODES, ferryRoute } from '../../data/map';
+import { reachStations } from '../../engine/game';
 import { dist } from '../../engine/graph';
 import type { CharId, GameState } from '../../engine/types';
 import { getLabels, labelBox } from './labels';
@@ -39,6 +40,8 @@ interface Props {
   voyage: VoyageInfo | null;
   /** カメラを向けるマス（おまつり会場・激アツ駅の発表のとき） */
   focus?: string;
+  /** サイコロが まだ回っている（のこりマス数を見せない） */
+  rolling?: boolean;
 }
 
 const BASE_SPAN = 560; // ふだんの拡大率で、画面の横幅に入る地図の広さ
@@ -47,7 +50,7 @@ const PIECE_W = 66;
 const KUMO_Y = -PIECE_W * 1.12 - 48;
 const KUMO_FLY_MS = 800;
 
-export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onInspect, onPlayer, voyage, focus }: Props) {
+export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onInspect, onPlayer, voyage, focus, rolling = false }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 360, h: 600 });
   const [cam, setCam] = useState({ x: NODE[game.players[0].pos].x, y: NODE[game.players[0].pos].y, z: 1 });
@@ -220,6 +223,14 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
 
   const pops = useBuildPops(game.owner);
 
+  // ひとりじめできそうな駅（人間の人のぶんだけ、その人の色で光らせる）
+  const humanKey = game.players.map((q) => (q.isCpu ? 0 : 1)).join('');
+  const reach = useMemo(() => {
+    const out: Record<string, { player: number; left: number }> = {};
+    for (const q of game.players) if (!q.isCpu) for (const r of reachStations(game, q.id)) out[r.station] = { player: q.id, left: r.left.length };
+    return out;
+  }, [game.owner, humanKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // おまつり会場の発表と、激アツ駅の発表で 飾りを変える
   const festFocus = focus !== undefined && focus === game.destination;
   const dest = NODE[game.destination];
@@ -279,7 +290,7 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
           {showEnds.map((id) => (
             <circle key={id} cx={NODE[id].x} cy={NODE[id].y} r={NODE[id].kind === 'station' ? 50 : 38} fill="#fff27a" opacity={0.9} className="reach-glow" />
           ))}
-          <Squares owner={game.owner} colors={colors} destination={game.destination} pops={pops} hot={game.economy?.hot} />
+          <Squares owner={game.owner} colors={colors} destination={game.destination} pops={pops} hot={game.economy?.hot} reach={reach} />
 
           {/* おまつり会場の発表：ちょうちんが 順番に灯る */}
           {festFocus && (
@@ -360,7 +371,7 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
                     </text>
                   )}
                 </g>
-                {moving && ph.steps > 0 && (
+                {moving && ph.steps > 0 && !rolling && (
                   <g transform={`translate(0 ${-PIECE_W * 1.12 - (game.kumo === q.id ? 58 : 6)})`}>
                     <rect x={-34} y={-30} width={68} height={30} rx={15} fill="#ff7a45" stroke="#fff" strokeWidth={3} />
                     <text className="steps-left" y={-9}>

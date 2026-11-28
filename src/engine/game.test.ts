@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { FERRY, NODE, START_STATION, STATION_IDS } from '../data/map';
 import { PROPS_BY_STATION } from '../data/properties';
 import { LEVEL_TUNING, decide } from './ai';
-import { BOOM_MULT, HOT_MULT, SLUMP_MULT, assets, createGame, income, nearestStation, propIncome, reduce, yearlyIncome } from './game';
+import { BOOM_MULT, HOT_MULT, SLUMP_MULT, assets, cardBlocked, createGame, income, nearestStation, propIncome, reachStations, reduce, yearlyIncome } from './game';
 import { ADJ, dist, reachableEnds } from './graph';
 import type { Action, GameState } from './types';
 
@@ -219,6 +219,63 @@ describe('ゲームの進行', () => {
     s = ackAll(act(s, { t: 'USE_CARD', index: 0 }));
     expect(s.players[0].maneki).toBe(true);
     expect(reduce(s, { t: 'USE_CARD', index: 0 })).toBe(s);
+  });
+
+  it('ひとりじめできそうな駅は、自分だけが物件を持っていて 売り物が残っている駅', () => {
+    const s = structuredClone(ackAll(createGame(cfg(16))));
+    const [a, b, c] = ['shika', 'nigiwai', 'hotate'].map((id) => PROPS_BY_STATION[id]);
+    s.owner = { [a[0].id]: 0, [b[0].id]: 0, [b[1].id]: 1 };
+    for (const pr of c) s.owner[pr.id] = 0; // 全部持っている駅は もう ひとりじめ
+    const r = reachStations(s, 0);
+    expect(r.map((x) => x.station)).toEqual(['shika']);
+    expect(r[0].left).toHaveLength(a.length - 1);
+    expect(reachStations(s, 1)).toEqual([]);
+  });
+
+  it('ひとりじめ切符で、ひとりじめできそうな駅へ行き、そこで物件を買える', () => {
+    let s = structuredClone(ackAll(createGame(cfg(18))));
+    s.players[0].cards = ['kippu'];
+    // ひとりじめできそうな駅がないと使えない
+    expect(cardBlocked(s, s.players[0], 'kippu')).not.toBeNull();
+    const st = STATION_IDS.find((id) => id !== s.players[0].pos && id !== s.destination)!;
+    s.owner = { [PROPS_BY_STATION[st][0].id]: 0 };
+    expect(cardBlocked(s, s.players[0], 'kippu')).toBeNull();
+    // えらべない駅は だめ
+    expect(reduce(s, { t: 'USE_CARD', index: 0, station: s.players[0].pos })).toBe(s);
+    expect(reduce(s, { t: 'USE_CARD', index: 0 })).toBe(s);
+    s = ackAll(act(s, { t: 'USE_CARD', index: 0, station: st }));
+    expect(s.players[0].pos).toBe(st);
+    expect(s.players[0].cards).toEqual([]);
+    expect(s.phase).toEqual({ t: 'buy', station: st });
+  });
+
+  it('CPUは、残りを買えるお金があれば ひとりじめ切符を使う', () => {
+    const s = structuredClone(ackAll(createGame(cfg(19))));
+    const st = STATION_IDS.find((id) => id !== s.players[0].pos && id !== s.destination)!;
+    s.owner = { [PROPS_BY_STATION[st][0].id]: 0 };
+    s.players[0].isCpu = true;
+    s.players[0].cpuLevel = 3;
+    s.players[0].cards = ['kippu'];
+    s.players[0].money = 5_000_000;
+    // カードを使わずに ふる気まぐれ（noise）があるので、何回か ふり直した局面で ためす
+    let used = 0;
+    for (let k = 0; k < 10; k++) {
+      const t = structuredClone(s);
+      t.rollId = k;
+      const a = decide(t);
+      if (a?.t === 'USE_CARD') {
+        expect(a).toMatchObject({ index: 0, station: st });
+        used++;
+      }
+    }
+    expect(used).toBeGreaterThan(0);
+    // お金が足りないときは使わない
+    s.players[0].money = 0;
+    for (let k = 0; k < 10; k++) {
+      const t = structuredClone(s);
+      t.rollId = k;
+      expect(decide(t)).toEqual({ t: 'ROLL' });
+    }
   });
 
   it('てるてる坊主で追いはらった くもすけは、同じ番には もどってこない', () => {

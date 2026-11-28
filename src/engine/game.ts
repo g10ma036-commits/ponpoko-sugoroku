@@ -189,7 +189,7 @@ function apply(s: GameState, a: Action): boolean {
         startMove(s, 1);
         return true;
       }
-      if (a.t === 'USE_CARD') return useCard(s, a.index, a.num, a.target);
+      if (a.t === 'USE_CARD') return useCard(s, a.index, a.num, a.target, a.station);
       return false;
 
     case 'moving':
@@ -579,15 +579,42 @@ function buyProperty(s: GameState, propId: string, station: string): boolean {
 export const pittariMax = (p: Player) => (p.sleep > 0 ? 3 : 6);
 
 /** いまそのカードを使えないなら、その理由（使えるなら null）。画面・CPU・ルールで共通 */
+/**
+ * ひとりじめできそうな駅：自分だけが物件を持っていて、まだ売り物が残っている駅。
+ * left は残りの売り物（安い順）
+ */
+export function reachStations(s: GameState, pid: number): { station: string; left: Property[] }[] {
+  const out: { station: string; left: Property[] }[] = [];
+  for (const st of STATION_IDS) {
+    let mine = 0;
+    let other = false;
+    const left: Property[] = [];
+    for (const pr of PROPS_BY_STATION[st]) {
+      const o = s.owner[pr.id];
+      if (o === undefined) left.push(pr);
+      else if (o === pid) mine++;
+      else other = true;
+    }
+    if (mine > 0 && !other && left.length > 0) out.push({ station: st, left: left.sort((a, b) => a.price - b.price) });
+  }
+  return out;
+}
+
+/** ひとりじめ切符で行ける駅（今いる駅はのぞく） */
+export function kippuStations(s: GameState, p: Player): { station: string; left: Property[] }[] {
+  return reachStations(s, p.id).filter((r) => r.station !== p.pos);
+}
+
 export function cardBlocked(s: GameState, p: Player, id: CardId): string | null {
   if (CARDS[id].passive) return '持っているだけで効く';
   if ((id === 'kakeashi' || id === 'hayate') && p.sleep > 0) return `ねむっていて 使えない（あと${p.sleep}回）`;
   if (id === 'teruteru' && (s.kumo !== p.id || s.players.length < 2)) return 'くもすけがいないと使えない';
   if (id === 'maneki' && p.maneki) return 'もう効いている（次の決算で1.5倍）';
+  if (id === 'kippu' && kippuStations(s, p).length === 0) return 'ひとりじめできそうな駅がない（自分だけが物件を持つ駅へ行ける）';
   return null;
 }
 
-function useCard(s: GameState, index: number, num?: number, target?: number): boolean {
+function useCard(s: GameState, index: number, num?: number, target?: number, station?: string): boolean {
   const p = cur(s);
   const id = p.cards[index];
   if (!id) return false;
@@ -595,6 +622,7 @@ function useCard(s: GameState, index: number, num?: number, target?: number): bo
   if (cardBlocked(s, p, id)) return false;
   if (id === 'pittari' && (num === undefined || num < 1 || num > pittariMax(p) || !Number.isInteger(num))) return false;
   if (id === 'koukan' && (target === undefined || target === p.id || !s.players[target])) return false;
+  if (id === 'kippu' && !kippuStations(s, p).some((r) => r.station === station)) return false;
 
   p.cards.splice(index, 1);
   log(s, `${p.name}が${def.name}を使った`);
@@ -614,6 +642,24 @@ function useCard(s: GameState, index: number, num?: number, target?: number): bo
       p.pos = to;
       s.rollId++;
       s.queue.push({ tone: 'info', title: 'ふうせん', text: `ふわふわ〜っと「${stationName(to)}」へ 飛んでいった！`, speaker: p.charId, expr: 'happy', player: p.id });
+      if (to === s.destination) arrive(s);
+      else s.phase = { t: 'buy', station: to };
+      break;
+    }
+    case 'kippu': {
+      const to = station!;
+      const left = PROPS_BY_STATION[to].filter((pr) => s.owner[pr.id] === undefined).length;
+      p.pos = to;
+      s.rollId++;
+      s.queue.push({
+        tone: 'info',
+        title: 'ひとりじめ切符',
+        text: `「${stationName(to)}」へ ひとっとび！
+あと${left}件 買えば ひとりじめだ。`,
+        speaker: p.charId,
+        expr: 'happy',
+        player: p.id,
+      });
       if (to === s.destination) arrive(s);
       else s.phase = { t: 'buy', station: to };
       break;

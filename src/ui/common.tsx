@@ -94,6 +94,41 @@ export function Btn({ children, onClick, variant = 'secondary', disabled, classN
   );
 }
 
+/** 「〜しますか？」の確認。まわりを押すか「やめる」で取り消し */
+export function ConfirmDialog({
+  icon,
+  title,
+  children,
+  okLabel,
+  onOk,
+  onCancel,
+}: {
+  icon: ReactNode;
+  title: ReactNode;
+  children?: ReactNode;
+  okLabel: string;
+  onOk: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="confirm-backdrop" onClick={onCancel}>
+      <div className="confirm-card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <div className="confirm-icon">{icon}</div>
+        <div className="confirm-title">{title}</div>
+        {children}
+        <div className="confirm-btns">
+          <Btn onClick={onCancel} className="confirm-no">
+            やめる
+          </Btn>
+          <Btn variant="primary" onClick={onOk} className="confirm-yes">
+            {okLabel}
+          </Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** 画面下からせり上がるパネル */
 export function Sheet({ title, children, footer, onClose }: { title: ReactNode; children: ReactNode; footer?: ReactNode; onClose?: () => void }) {
   return (

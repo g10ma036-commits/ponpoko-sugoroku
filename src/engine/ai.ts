@@ -10,7 +10,7 @@ import { CARDS, HAND_MAX } from '../data/cards';
 import { PERSONA } from '../data/characters';
 import { FERRY, NODE } from '../data/map';
 import { PROP, PROPS_BY_STATION } from '../data/properties';
-import { SELL_RATE, cardBlocked, cur, income, ownedProps, pittariMax, propIncome, yearFactor } from './game';
+import { SELL_RATE, cardBlocked, cur, income, kippuStations, ownedProps, pittariMax, propIncome, yearFactor } from './game';
 import { dist, reachableEnds } from './graph';
 import type { Action, CardId, CpuLevel, GameState, Player } from './types';
 
@@ -175,6 +175,15 @@ function decideAction(s: GameState, p: Player): Action {
     if (someoneCloser) return use('nemuri');
   }
   if (has('pittari') && d >= 1 && d <= pittariMax(p)) return use('pittari', { num: d });
+  // ひとりじめ切符：残りを全部買えるお金があれば、いちばん安く ひとりじめできる駅へ
+  if (has('kippu')) {
+    const spare = p.money - 2000 * yearFactor(s.year);
+    const best = kippuStations(s, p)
+      .map((r) => ({ station: r.station, cost: r.left.reduce((a, pr) => a + pr.price, 0) }))
+      .filter((r) => r.cost <= spare)
+      .sort((a, b) => a.cost - b.cost)[0];
+    if (best) return use('kippu', { station: best.station });
+  }
   if (t.shoeSense && p.sleep === 0) {
     // 会場には ぴったりの目でしか止まれないので、ぴったり着ける見込みがいちばん高い ふり方をえらぶ
     const c1 = arriveChance(p.pos, s.destination, 1);

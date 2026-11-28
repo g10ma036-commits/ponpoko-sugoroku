@@ -21,6 +21,8 @@ import {
   pittariMax,
   ferryPlace,
   isMonopoly,
+  kippuStations,
+  reachStations,
   ownedProps,
   round100,
   stationName,
@@ -30,7 +32,7 @@ import {
 import { dist } from '../../engine/graph';
 import type { Action, CardId, GameState, Property } from '../../engine/types';
 import { SQUARE_STYLE } from '../board/Squares';
-import { Btn, CharFace, Money, Sheet } from '../common';
+import { Btn, CharFace, ConfirmDialog, Money, Sheet } from '../common';
 
 type Dispatch = (a: Action) => boolean;
 
@@ -152,7 +154,11 @@ export function BuySheet({ game, station, dispatch }: { game: GameState; station
   const free = props.filter((pr) => game.owner[pr.id] === undefined);
   const others = props.some((pr) => game.owner[pr.id] !== undefined && game.owner[pr.id] !== p.id);
   const mono = isMonopoly(game, station, p.id);
+  // 「買う」を押したら、まず確認を出す
+  const [asking, setAsking] = useState<Property | null>(null);
+  const completes = asking !== null && props.every((pr) => pr.id === asking.id || game.owner[pr.id] === p.id);
   return (
+    <>
     <Sheet
       title={<>🏠 {stationName(station)}の物件</>}
       footer={
@@ -179,19 +185,40 @@ export function BuySheet({ game, station, dispatch }: { game: GameState; station
               {o === p.id ? 'あなた' : game.players[o].name}
             </span>
           ) : (
-            <Btn
-              variant="primary"
-              disabled={p.money < pr.price}
-              onClick={() => {
-                if (dispatch({ t: 'BUY', prop: pr.id })) sfx.buy();
-              }}
-            >
+            <Btn variant="primary" disabled={p.money < pr.price} onClick={() => setAsking(pr)}>
               買う
             </Btn>
           );
         return <PropRow key={pr.id} pr={pr} right={right} game={game} />;
       })}
     </Sheet>
+    {asking && (
+      <ConfirmDialog
+        icon="🏠"
+        title={<>「{asking.name}」を 買いますか？</>}
+        okLabel="買う！"
+        onCancel={() => setAsking(null)}
+        onOk={() => {
+          const pr = asking;
+          setAsking(null);
+          if (dispatch({ t: 'BUY', prop: pr.id })) sfx.buy();
+        }}
+      >
+        <div className="confirm-rows">
+          <div>
+            値段 <b>{formatRyo(asking.price)}</b>
+          </div>
+          <div>
+            年収益 <b className="inc">{formatRyo(propIncome(game, asking))}</b>
+          </div>
+          <div>
+            買ったあとの 所持金 <b>{formatRyo(p.money - asking.price)}</b>
+          </div>
+        </div>
+        {completes && <div className="hint good">🎉 これで「ひとりじめ」！ 収益が2倍になるよ</div>}
+      </ConfirmDialog>
+    )}
+    </>
   );
 }
 
@@ -199,7 +226,10 @@ export function BuySheet({ game, station, dispatch }: { game: GameState; station
 export function ShopSheet({ game, items, dispatch }: { game: GameState; items: CardId[]; dispatch: Dispatch }) {
   const p = game.players[game.turn];
   const full = p.cards.length >= HAND_MAX;
+  // 値段のボタンを押したら、まず確認を出す
+  const [asking, setAsking] = useState<CardId | null>(null);
   return (
+    <>
     <Sheet
       title="🏪 カード屋さん"
       footer={
@@ -223,19 +253,37 @@ export function ShopSheet({ game, items, dispatch }: { game: GameState; items: C
               <div className="card-name">{c.name}</div>
               <div className="card-desc">{c.desc}</div>
             </div>
-            <Btn
-              variant="primary"
-              disabled={full || p.money < c.price}
-              onClick={() => {
-                if (dispatch({ t: 'BUY_CARD', card: id })) sfx.buy();
-              }}
-            >
+            <Btn variant="primary" disabled={full || p.money < c.price} onClick={() => setAsking(id)}>
               {formatRyo(c.price)}
             </Btn>
           </div>
         );
       })}
     </Sheet>
+    {asking && (
+      <ConfirmDialog
+        icon={CARDS[asking].icon}
+        title={<>「{CARDS[asking].name}」を 買いますか？</>}
+        okLabel="買う！"
+        onCancel={() => setAsking(null)}
+        onOk={() => {
+          const id = asking;
+          setAsking(null);
+          if (dispatch({ t: 'BUY_CARD', card: id })) sfx.buy();
+        }}
+      >
+        <p className="confirm-desc">{CARDS[asking].desc}</p>
+        <div className="confirm-rows">
+          <div>
+            値段 <b>{formatRyo(CARDS[asking].price)}</b>
+          </div>
+          <div>
+            買ったあとの 所持金 <b>{formatRyo(p.money - CARDS[asking].price)}</b>
+          </div>
+        </div>
+      </ConfirmDialog>
+    )}
+    </>
   );
 }
 
@@ -271,8 +319,8 @@ export function SellSheet({ game, dispatch }: { game: GameState; dispatch: Dispa
 // ---------------------------------------------------------------- 手札
 export function CardSheet({ game, dispatch, onClose }: { game: GameState; dispatch: Dispatch; onClose: () => void }) {
   const p = game.players[game.turn];
-  const [pending, setPending] = useState<{ index: number; kind: 'num' | 'target' } | null>(null);
-  const use = (index: number, extra: { num?: number; target?: number } = {}) => {
+  const [pending, setPending] = useState<{ index: number; kind: 'num' | 'target' | 'station' } | null>(null);
+  const use = (index: number, extra: { num?: number; target?: number; station?: string } = {}) => {
     if (dispatch({ t: 'USE_CARD', index, ...extra })) {
       sfx.card();
       onClose();
@@ -290,6 +338,30 @@ export function CardSheet({ game, dispatch, onClose }: { game: GameState; dispat
             </Btn>
           ))}
         </div>
+      </Sheet>
+    );
+  }
+  if (pending?.kind === 'station') {
+    return (
+      <Sheet title="🎫 どの駅へ行く？" onClose={() => setPending(null)}>
+        <div className="hint">自分だけが物件を持っている駅だよ。残りを全部買うと「ひとりじめ」で 収益2倍！</div>
+        {kippuStations(game, p).map((r) => {
+          const cost = r.left.reduce((a, pr) => a + pr.price, 0);
+          return (
+            <button type="button" key={r.station} className="target-row" onClick={() => use(pending.index, { station: r.station })}>
+              <span className="region-dot" style={{ background: REGIONS[NODE[r.station].region].color }} />
+              <span>
+                {stationName(r.station)}
+                {r.station === game.destination && ' 🏮'}
+                {r.station === game.economy?.hot && ' 🔥'}
+              </span>
+              <span className="target-cards">
+                あと{r.left.length}件・{formatRyo(cost)}
+                {cost > p.money && <span className="target-short">お金が足りない</span>}
+              </span>
+            </button>
+          );
+        })}
       </Sheet>
     );
   }
@@ -335,6 +407,7 @@ export function CardSheet({ game, dispatch, onClose }: { game: GameState; dispat
               onClick={() => {
                 if (c.needsNum) setPending({ index: i, kind: 'num' });
                 else if (c.needsTarget) setPending({ index: i, kind: 'target' });
+                else if (c.needsStation) setPending({ index: i, kind: 'station' });
                 else use(i);
               }}
             >
@@ -366,11 +439,18 @@ export function SquareSheet({ game, node, onClose, onGo }: { game: GameState; no
     const owners = props.map((pr) => game.owner[pr.id]);
     const monoOwner = owners.every((o) => o !== undefined && o === owners[0]) ? owners[0] : undefined;
     const free = owners.filter((o) => o === undefined).length;
+    // ひとりじめできそうな人（自分だけが物件を持っていて、売り物が残っている）
+    const reachBy = game.players.map((q) => ({ q, r: reachStations(game, q.id).find((x) => x.station === node) })).find((x) => x.r);
     body = (
       <>
         {node === game.destination && (
           <div className="hint good">
             🏮 いまの おまつり会場！ ぴったり止まって 一番に着くと 賞金 <b>{formatRyo(arrivalBonus(game))}</b>
+          </div>
+        )}
+        {reachBy && (
+          <div className="hint good">
+            👑 {reachBy.q.name}さんが あと<b>{reachBy.r!.left.length}件</b>で ひとりじめ！
           </div>
         )}
         <p className="sq-desc">止まると、この町の物件を買えるよ。物件は毎年12月の決算で 収益を生むんだ。</p>

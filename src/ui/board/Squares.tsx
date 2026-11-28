@@ -2,6 +2,7 @@
 // 物件が買われると、駅に大きな家が にょきっと建ち、小さな家の場所へ すいこまれる。
 // ひとりじめされた駅は、金色のふちと 持ち主の色の旗で目立たせる。
 // 激アツ駅（6月のニュース速報の駅）は、うしろで炎が燃えて、駅名に「🔥激アツ」の札がつく。
+// ひとりじめできそうな駅（自分だけが物件を持っている駅）は、その人の色で光って「👑あと○件」の札がつく。
 import { memo, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { NODE, NODES, REGIONS } from '../../data/map';
 import { PROP, PROPS_BY_STATION } from '../../data/properties';
@@ -38,6 +39,8 @@ interface Props {
   pops?: Pop[];
   /** 激アツ駅（ニュース速報の駅） */
   hot?: string;
+  /** ひとりじめできそうな駅 → だれが・あと何件 */
+  reach?: Record<string, { player: number; left: number }>;
 }
 
 const squares = NODES.filter((n) => n.kind !== 'station');
@@ -45,6 +48,21 @@ const stations = NODES.filter((n) => n.kind === 'station');
 
 /** 目的地の旗の位置（札と反対側） */
 const FLAG_AT = { below: 'translate(18 -30)', above: 'translate(30 10)', right: 'translate(-22 -30)', left: 'translate(18 -30)' };
+/** きらきら（4つの とがった星） */
+const SPARK = 'M0,-9 L2.2,-2.2 L9,0 L2.2,2.2 L0,9 L-2.2,2.2 L-9,0 L-2.2,-2.2 Z';
+const SPARKS: [number, number, number][] = [
+  [-44, -40, 1],
+  [46, -30, 0.8],
+  [42, 44, 1],
+  [-46, 38, 0.75],
+];
+/** 「👑あと○件」の札の位置（ひとりじめの旗と同じ側。ひとりじめになると旗に変わる） */
+const REACH_AT: Record<string, { x: number; y: number }> = {
+  below: { x: -34, y: -50 },
+  above: { x: -66, y: -4 },
+  right: { x: 38, y: -48 },
+  left: { x: -38, y: -48 },
+};
 /** ひとりじめの旗の位置と向き（目的地の旗・札とぶつからない側） */
 const MONO_AT: Record<string, { x: number; y: number; dir: 1 | -1 }> = {
   below: { x: -18, y: -28, dir: -1 },
@@ -124,7 +142,7 @@ export function useBuildPops(owner: Record<string, number>): Pop[] {
   return pops;
 }
 
-export const Squares = memo(function Squares({ owner, colors, destination, pops = [], hot }: Props) {
+export const Squares = memo(function Squares({ owner, colors, destination, pops = [], hot, reach = {} }: Props) {
   const growing = new Set(pops.flatMap((pp) => pp.props));
 
   return (
@@ -151,9 +169,21 @@ export const Squares = memo(function Squares({ owner, colors, destination, pops 
         const mono = first !== undefined && props.every((p) => owner[p.id] === first) ? first : undefined;
         const mf = MONO_AT[lp.side];
         const isHot = n.id === hot;
+        const rc = reach[n.id];
+        const ra = REACH_AT[lp.side];
         return (
           <g key={n.id} data-node={n.id} className="tappable" transform={`translate(${n.x} ${n.y})`}>
             {isHot && <HotFire />}
+            {rc && (
+              <g pointerEvents="none">
+                {/* 金色に光って、まわりで きらきら。輪と札は その人の色 */}
+                <rect x={-48} y={-48} width={96} height={96} rx={30} fill="#ffe14d" className="mono-reach-glow" />
+                <rect x={-36} y={-36} width={72} height={72} rx={21} fill="none" stroke={colors[rc.player]} strokeWidth={6} className="mono-reach-ring" />
+                {SPARKS.map(([x, y, k], i) => (
+                  <path key={i} d={SPARK} transform={`translate(${x} ${y}) scale(${k})`} fill="#fff6b0" stroke="#e0a800" strokeWidth={1.5} className="mono-spark" style={{ animationDelay: `${i * 0.3}s` }} />
+                ))}
+              </g>
+            )}
             {isDest && (
               <circle r={44} className="dest-ring" fill="none" stroke="#ff5a5a" strokeWidth={6} />
             )}
@@ -197,6 +227,16 @@ export const Squares = memo(function Squares({ owner, colors, destination, pops 
                 );
               })}
             </g>
+            {rc && (
+              <g transform={`translate(${ra.x} ${ra.y})`} pointerEvents="none">
+                <g className="mono-reach-tag">
+                  <rect x={-40} y={-14} width={80} height={27} rx={13.5} fill={colors[rc.player]} stroke="#ffd23f" strokeWidth={3.5} />
+                  <text className="mono-reach-text" y={5.5}>
+                    👑あと{rc.left}件
+                  </text>
+                </g>
+              </g>
+            )}
             {mono !== undefined && (
               <g transform={`translate(${mf.x} ${mf.y})`} className="mono-flag">
                 <path d="M0,0 L0,-40" stroke="#4a3426" strokeWidth={3.5} strokeLinecap="round" />

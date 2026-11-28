@@ -15,6 +15,8 @@ export interface CardDef {
   passive?: boolean;
   needsNum?: boolean;
   needsTarget?: boolean;
+  /** 行き先の駅をえらぶ */
+  needsStation?: boolean;
 }
 
 export const CARDS: Record<CardId, CardDef> = {
@@ -28,6 +30,7 @@ export const CARDS: Record<CardId, CardDef> = {
   omamori: { id: 'omamori', name: 'おまもり', icon: '🧧', desc: '持っていると、悪いことを1回ふせぐ', price: 3000, weight: 10, passive: true },
   teruteru: { id: 'teruteru', name: 'てるてる坊主', icon: '☀️', desc: 'くもすけを ほかの人へ追いはらう', price: 4000, weight: 7 },
   koukan: { id: 'koukan', name: '交換札', icon: '🔄', desc: 'えらんだ人と 手札を全部入れかえる', price: 3000, weight: 5, needsTarget: true },
+  kippu: { id: 'kippu', name: 'ひとりじめ切符', icon: '🎫', desc: 'ひとりじめできそうな駅（自分だけが物件を持つ駅）を えらんで 一気に行ける', price: 6000, weight: 6, move: true, needsStation: true },
 };
 
 export const CARD_IDS = Object.keys(CARDS) as CardId[];

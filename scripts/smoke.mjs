@@ -43,19 +43,27 @@ for (let i = 0; i < 60; i++) {
     await page.locator('.dialog').click();
     continue;
   }
-  if (await page.locator('.dir-opt').count()) {
-    await shot(`07-branch-${i}`);
-    await page.locator('.dir-opt').first().dispatchEvent('click');
-    continue;
-  }
+  // パネルが先（残り1マスの分かれ道でマスを押すと、説明と「ここへ行く！」のパネルが 矢印の上に出る）
   if (await page.locator('.sheet').count()) {
     await shot(`08-sheet-${i}`);
     const buy = page.locator('.sheet .btn-primary:not([disabled])', { hasText: '買う' });
-    if (await buy.count()) await buy.first().click();
+    if (await buy.count()) {
+      await buy.first().click();
+      // 「買いますか？」の確認
+      await page.waitForTimeout(250);
+      if (!(await page.locator('.confirm-card').count())) errors.push('FAIL: 買う前の確認が出ない');
+      await shot(`08-confirm-${i}`);
+      await page.locator('.confirm-yes').click();
+    }
     await page.waitForTimeout(300);
     const done = page.locator('.sheet-foot .btn-primary');
     if (await done.count()) await done.click();
     else await page.locator('.sheet-foot .btn, .sheet .btn-danger').first().click();
+    continue;
+  }
+  if (await page.locator('.dir-opt').count()) {
+    await shot(`07-branch-${i}`);
+    await page.locator('.dir-opt').first().dispatchEvent('click');
     continue;
   }
   if (await page.locator('.roll-btn').count()) {

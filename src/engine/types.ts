@@ -18,7 +18,8 @@ export type CardId =
   | 'maneki'
   | 'omamori'
   | 'teruteru'
-  | 'koukan';
+  | 'koukan'
+  | 'kippu';
 
 export interface MapNode {
   id: string;
@@ -194,7 +195,7 @@ export interface GameState {
 
 export type Action =
   | { t: 'ROLL' }
-  | { t: 'USE_CARD'; index: number; num?: number; target?: number }
+  | { t: 'USE_CARD'; index: number; num?: number; target?: number; station?: string }
   | { t: 'STEP' }
   | { t: 'DIR'; to: string }
   | { t: 'GOAL'; to: string }

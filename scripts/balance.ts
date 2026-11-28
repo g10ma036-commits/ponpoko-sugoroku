@@ -2,7 +2,7 @@
 //   npm run balance -- --games 800 --years 3
 // 目安：よわい 約65%・ふつう 約43%・つよい 約28%（強さは src/engine/ai.ts の LEVEL_TUNING で変える）
 import { decide } from '../src/engine/ai';
-import { assets, cardBlocked, createGame, cur, pittariMax, reduce, yearFactor } from '../src/engine/game';
+import { assets, cardBlocked, createGame, cur, kippuStations, pittariMax, reduce, yearFactor } from '../src/engine/game';
 import { dist, reachableEnds } from '../src/engine/graph';
 import { PROPS_BY_STATION } from '../src/data/properties';
 import { CARDS, HAND_MAX } from '../src/data/cards';
@@ -33,6 +33,11 @@ export function human(s: GameState): Action {
       if (can('teruteru')) return use('teruteru');
       if (can('pittari') && d <= pittariMax(p)) return use('pittari', { num: d });
       if (can('maneki') && s.month >= 6) return use('maneki');
+      // ひとりじめ切符：光っている駅のうち、残りを買えるところへ
+      if (can('kippu')) {
+        const ok = kippuStations(s, p).find((r) => r.left.reduce((a, pr) => a + pr.price, 0) <= p.money);
+        if (ok) return use('kippu', { station: ok.station });
+      }
       if (can('hayate') && d >= 10) return use('hayate');
       if (can('kakeashi') && d >= 6) return use('kakeashi');
       if (can('nemuri') && rnd() < 0.5) return use('nemuri');

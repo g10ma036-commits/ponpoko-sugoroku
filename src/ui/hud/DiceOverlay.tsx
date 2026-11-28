@@ -22,6 +22,9 @@ export function Die({ value, size = 64, rolling = false }: { value: number; size
   );
 }
 
+/** サイコロが回っている時間（これを過ぎると出目が出る）。止まれるマスも、このあとで光らせる */
+export const DICE_SPIN_MS = 650;
+
 /** サイコロをふったときの演出。rollId が変わるたびに再生する */
 export function DiceOverlay({ rollId, dice, speed, sleepy = false }: { rollId: number; dice: number[]; speed: number; sleepy?: boolean }) {
   const [state, setState] = useState<'hidden' | 'rolling' | 'shown'>('hidden');
@@ -36,7 +39,7 @@ export function DiceOverlay({ rollId, dice, speed, sleepy = false }: { rollId: n
       window.clearInterval(spin);
       setFaces(dice);
       setState('shown');
-    }, 650 / speed);
+    }, DICE_SPIN_MS / speed);
     const t2 = window.setTimeout(() => setState('hidden'), 1250 / speed);
     return () => {
       window.clearInterval(spin);
