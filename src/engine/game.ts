@@ -194,12 +194,12 @@ function apply(s: GameState, a: Action): boolean {
 
     case 'moving':
       if (a.t === 'STEP' && ph.options === null && ph.steps > 0) {
-        const toward = ph.goal ? stepToward(p.pos, ph.prev, ph.steps, s.destination, ph.goal) : null;
+        const toward = ph.goal ? stepToward(p.pos, ph.prev, ph.steps, ph.goal) : null;
         stepTo(s, toward ?? nextOptions(p.pos, ph.prev)[0]);
         return true;
       }
       // 止まれるマスを選ぶと、そこまで分かれ道も自動で進む
-      if (a.t === 'GOAL' && ph.steps > 0 && reachableEnds(p.pos, ph.prev, ph.steps, s.destination).has(a.to)) {
+      if (a.t === 'GOAL' && ph.steps > 0 && reachableEnds(p.pos, ph.prev, ph.steps).has(a.to)) {
         ph.goal = a.to;
         ph.options = null;
         return true;
@@ -284,7 +284,7 @@ function refreshOptions(s: GameState) {
   const ph = s.phase;
   if (ph.t !== 'moving') return;
   const p = cur(s);
-  if (ph.goal && !stepToward(p.pos, ph.prev, ph.steps, s.destination, ph.goal)) ph.goal = undefined;
+  if (ph.goal && !stepToward(p.pos, ph.prev, ph.steps, ph.goal)) ph.goal = undefined;
   const opts = nextOptions(p.pos, ph.prev);
   ph.options = opts.length > 1 && !ph.goal ? opts : null;
 }
@@ -299,13 +299,10 @@ function stepTo(s: GameState, to: string) {
   ph.steps--;
   ph.walked++;
   checkKumoContact(s, to);
-  if (to === s.destination) {
-    ph.steps = 0;
-    arrive(s);
-    return;
-  }
+  // おまつり会場は ぴったりの目で止まったときだけ到着（通りすぎるだけでは着かない）
   if (ph.steps <= 0) {
-    land(s);
+    if (to === s.destination) arrive(s);
+    else land(s);
     return;
   }
   refreshOptions(s);
@@ -838,7 +835,7 @@ function announceEconomy(s: GameState) {
   });
 }
 
-/** 6月：ある駅がテレビで紹介されて、今年の決算でその駅の物件の収益が2倍になる */
+/** 6月：ある駅がテレビで紹介されて「激アツ駅」になる。今年の決算で その駅の物件の収益が2倍 */
 function hotNews(s: GameState) {
   if (!s.economy) return;
   const st = pick(s, STATION_IDS.filter((id) => id !== s.destination));
@@ -851,8 +848,9 @@ function hotNews(s: GameState) {
     speaker: 'hoo',
     expr: 'happy',
     title: 'ニュース速報！',
+    focus: st,
     text:
-      `🔥 「${name}」が テレビで しょうかいされて 大人気！\n今年の決算では、${name}の物件の収益が ${HOT_MULT}倍！` +
+      `🔥 「${name}」が テレビで しょうかいされて 激アツ駅に！\n今年の決算では、${name}の物件の収益が ${HOT_MULT}倍！` +
       (owners.length ? `\n（持っている人：${owners.map((o) => s.players[o].name).join('・')}）` : '\nまだ だれも持っていない… 買うなら いまだ！'),
   });
 }

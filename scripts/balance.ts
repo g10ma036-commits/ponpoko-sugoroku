@@ -3,7 +3,7 @@
 // 目安：よわい 約65%・ふつう 約43%・つよい 約28%（強さは src/engine/ai.ts の LEVEL_TUNING で変える）
 import { decide } from '../src/engine/ai';
 import { assets, cardBlocked, createGame, cur, pittariMax, reduce, yearFactor } from '../src/engine/game';
-import { dist } from '../src/engine/graph';
+import { dist, reachableEnds } from '../src/engine/graph';
 import { PROPS_BY_STATION } from '../src/data/properties';
 import { CARDS, HAND_MAX } from '../src/data/cards';
 import type { Action, CardId, CharId, CpuLevel, GameState } from '../src/engine/types';
@@ -39,6 +39,8 @@ export function human(s: GameState): Action {
       return { t: 'ROLL' };
     }
     case 'moving': {
+      // 会場が光っていたら（ぴったり止まれるなら）そこを押す
+      if (!ph.goal && ph.walked === 0 && reachableEnds(p.pos, ph.prev, ph.steps).has(s.destination)) return { t: 'GOAL', to: s.destination };
       if (!ph.options) return { t: 'STEP' };
       const best = Math.min(...ph.options.map((o) => dist(o, s.destination)));
       const good = ph.options.filter((o) => dist(o, s.destination) === best);

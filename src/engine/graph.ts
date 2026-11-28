@@ -43,9 +43,9 @@ export function nextOptions(pos: string, prev: string | null): string[] {
 
 /**
  * あと steps マス進んだときに止まれるマスの一覧。
- * 移動のルールは nextOptions と同じで、stopAt（おまつり会場）を通ったらそこで止まる。
+ * 移動のルールは nextOptions と同じ。おまつり会場も 通りすぎるだけでは止まらない（ぴったりの目で止まる）。
  */
-export function reachableEnds(pos: string, prev: string | null, steps: number, stopAt: string): Set<string> {
+export function reachableEnds(pos: string, prev: string | null, steps: number): Set<string> {
   if (steps <= 0) return new Set([pos]);
   const memo = new Map<string, Set<string>>();
   const go = (at: string, from: string | null, left: number): Set<string> => {
@@ -54,7 +54,7 @@ export function reachableEnds(pos: string, prev: string | null, steps: number, s
     if (r) return r;
     r = new Set();
     for (const o of nextOptions(at, from)) {
-      if (o === stopAt || left === 1) r.add(o);
+      if (left === 1) r.add(o);
       else for (const e of go(o, at, left - 1)) r.add(e);
     }
     memo.set(key, r);
@@ -64,11 +64,11 @@ export function reachableEnds(pos: string, prev: string | null, steps: number, s
 }
 
 /** goal に止まるために、次に進むマス（行けないなら null） */
-export function stepToward(pos: string, prev: string | null, steps: number, stopAt: string, goal: string): string | null {
+export function stepToward(pos: string, prev: string | null, steps: number, goal: string): string | null {
   for (const o of nextOptions(pos, prev)) {
-    if (o === stopAt || steps === 1) {
+    if (steps === 1) {
       if (o === goal) return o;
-    } else if (reachableEnds(o, pos, steps - 1, stopAt).has(goal)) {
+    } else if (reachableEnds(o, pos, steps - 1).has(goal)) {
       return o;
     }
   }

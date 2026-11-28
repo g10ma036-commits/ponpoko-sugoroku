@@ -4,7 +4,9 @@ import { CharSvg } from '../../characters/Characters';
 import type { GameState } from '../../engine/types';
 
 export const TIPS: Record<string, string> = {
-  roll: 'まずは「🎲 サイコロをふる」を押してみよう！ 上の 🏮 が おまつり会場。一番に着くと 賞金が もらえるよ。',
+  roll: 'まずは「🎲 サイコロをふる」を押してみよう！ 上の 🏮 が おまつり会場。ぴったりの目で 止まって 一番に着くと 賞金が もらえるよ。',
+  exact: '会場に ぴったり止まれるよ！ 光っている 🏮会場を押してね。会場は 通りすぎるだけでは 着かないから、道に 気をつけて。',
+  hot: '🔥 が燃えている駅が 今年の「激アツ駅」！ 12月の決算で 物件の収益が 2倍になるよ。止まったら 買うチャンス！',
   fork: '分かれ道だ！ 矢印で 道をえらぶか、光っているマスを押すと そこまで 一気に行けるよ。矢印の 🏮の数字は おまつり会場までの マス数だよ。',
   reach: '光っているマスが 止まれるマスだよ。押すと 説明が出て、「ここへ行く！」で そこまで 一気に進めるんだ。',
   buy: '駅に止まると 物件が買えるよ。物件は 12月の決算で お金を生むんだ。同じ駅の物件を ぜんぶ買うと「ひとりじめ」で 収益2倍！',
@@ -16,13 +18,14 @@ export const TIPS: Record<string, string> = {
 };
 
 /** いま出す案内（なければ null） */
-export function currentTip(game: GameState, humanTurn: boolean, ends: number, seen: string[]): string | null {
+export function currentTip(game: GameState, humanTurn: boolean, ends: number, seen: string[], canArrive = false): string | null {
   if (!humanTurn) return null;
   const p = game.players[game.turn];
   const ph = game.phase;
   const ok = (id: string) => !seen.includes(id);
   const later = game.year > 1 || game.month >= 2;
   if (ph.t === 'action' && game.kumo === p.id && ok('kumo')) return 'kumo';
+  if (ph.t === 'moving' && !ph.goal && canArrive && ok('exact')) return 'exact';
   if (ph.t === 'moving' && !ph.goal && ph.options && ok('fork')) return 'fork';
   if (ph.t === 'moving' && !ph.goal && !ph.options && ends > 1 && ok('reach')) return 'reach';
   if (ph.t === 'buy' && ok('buy')) return 'buy';
@@ -31,6 +34,7 @@ export function currentTip(game: GameState, humanTurn: boolean, ends: number, se
     if (ok('roll')) return 'roll';
     if (later && p.cards.length > 0 && ok('cards')) return 'cards';
     if (later && ok('news')) return 'news';
+    if (game.economy?.hot && ok('hot')) return 'hot';
     if ((game.year > 1 || game.month >= 3) && ok('map')) return 'map';
   }
   return null;

@@ -34,7 +34,7 @@ import { Btn, CharFace, Money, Sheet } from '../common';
 
 type Dispatch = (a: Action) => boolean;
 
-/** 景気ニュースの印（📈 好景気・📉 不景気・🔥 ニュース速報） */
+/** 景気ニュースの印（📈 好景気・📉 不景気・🔥 激アツ駅） */
 function NewsBadge({ game, pr }: { game: GameState; pr: Property }) {
   const e = game.economy;
   if (!e) return null;
@@ -84,7 +84,7 @@ function StationNews({ game, station }: { game: GameState; station: string }) {
   const lines: string[] = [];
   const region = NODE[station].region;
   if (region === e.boom) lines.push(`📈 今年は${REGIONS[region].name}が 好景気！ 収益${BOOM_MULT}倍`);
-  if (e.hot === station) lines.push(`🔥 ニュース速報の駅！ 収益${HOT_MULT}倍`);
+  if (e.hot === station) lines.push(`🔥 今年の激アツ駅！ 収益${HOT_MULT}倍`);
   if (PROPS_BY_STATION[station].some((p) => p.cat === e.slump)) lines.push(`📉 ${CATEGORY_LABEL[e.slump].label}の物件は 不景気（${SLUMP_MULT}倍）`);
   if (lines.length === 0) return null;
   return (
@@ -97,7 +97,7 @@ function StationNews({ game, station }: { game: GameState; station: string }) {
 }
 
 // ---------------------------------------------------------------- 景気ニュース
-export function NewsSheet({ game, onClose }: { game: GameState; onClose: () => void }) {
+export function NewsSheet({ game, onClose, onPeek }: { game: GameState; onClose: () => void; onPeek: (node: string) => void }) {
   const e = game.economy;
   return (
     <Sheet title="📰 今年の景気ニュース" onClose={onClose}>
@@ -123,18 +123,21 @@ export function NewsSheet({ game, onClose }: { game: GameState; onClose: () => v
             <div className="news-card-sub">決算の収益が {SLUMP_MULT}倍</div>
           </div>
           <div className={`news-card ${e.hot ? 'hot' : 'wait'}`}>
-            <div className="news-card-head">🔥 ニュース速報</div>
+            <div className="news-card-head">🔥 激アツ駅（ニュース速報）</div>
             {e.hot ? (
               <>
                 <div className="news-card-main">{stationName(e.hot)}の物件</div>
                 <div className="news-card-sub">決算の収益が {HOT_MULT}倍（{REGIONS[NODE[e.hot].region].name}）</div>
+                <Btn className="peek-btn" onClick={() => onPeek(e.hot!)}>
+                  🔍 地図で見る
+                </Btn>
               </>
             ) : (
               <div className="news-card-sub">6月に 発表されるよ。</div>
             )}
           </div>
           <p className="note">
-            景気は 12月の決算の収益に 効きます。ほかの年は 毎年1月に 新しい景気が発表されるよ。物件の 年収益の横の 📈📉🔥 が 景気の印です。
+            景気は 12月の決算の収益に 効きます。ほかの年は 毎年1月に 新しい景気が発表されるよ。物件の 年収益の横の 📈📉🔥 が 景気の印です。地図では 激アツ駅が 🔥で 燃えています。
           </p>
         </>
       )}
@@ -367,7 +370,7 @@ export function SquareSheet({ game, node, onClose, onGo }: { game: GameState; no
       <>
         {node === game.destination && (
           <div className="hint good">
-            🏮 いまの おまつり会場！ 一番に着くと 賞金 <b>{formatRyo(arrivalBonus(game))}</b>
+            🏮 いまの おまつり会場！ ぴったり止まって 一番に着くと 賞金 <b>{formatRyo(arrivalBonus(game))}</b>
           </div>
         )}
         <p className="sq-desc">止まると、この町の物件を買えるよ。物件は毎年12月の決算で 収益を生むんだ。</p>

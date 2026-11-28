@@ -3162,6 +3162,104 @@ b {
   }
 }
 
+/* ---- 盤面：激アツ駅（うしろで炎が燃える・駅名に札） */
+.hot-aura {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: hot-aura 1.6s ease-in-out infinite;
+}
+@keyframes hot-aura {
+  0%,
+  100% {
+    opacity: 0.22;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(1.08);
+  }
+}
+.flame {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: flame 0.5s ease-in-out infinite alternate;
+}
+@keyframes flame {
+  from {
+    transform: scale(1.06, 0.86) rotate(-3deg);
+  }
+  to {
+    transform: scale(0.94, 1.12) rotate(3deg);
+  }
+}
+.hot-tag {
+  pointer-events: none;
+}
+.hot-tag-text {
+  font-size: 15px;
+  font-weight: 900;
+  fill: #fff;
+  text-anchor: middle;
+}
+
+/* ---- 盤面：会場に ぴったり止まれる・通りすぎた */
+.exact-tag {
+  animation: exact-bob 0.9s ease-in-out infinite;
+}
+@keyframes exact-bob {
+  50% {
+    transform: translateY(-7px);
+  }
+}
+.exact-tag-text,
+.pass-pop-text {
+  font-size: 18px;
+  font-weight: 900;
+  text-anchor: middle;
+  fill: #fff;
+}
+.pass-pop-text {
+  fill: #e0524a;
+}
+.pass-pop {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: pass-pop 1.7s ease-out both;
+}
+@keyframes pass-pop {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  14% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  22% {
+    transform: scale(1);
+  }
+  75% {
+    opacity: 1;
+    transform: translateY(-6px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-18px);
+  }
+}
+.map-pin {
+  animation: exact-bob 1s ease-in-out infinite;
+}
+.pin-icon {
+  font-size: 20px;
+  text-anchor: middle;
+}
+.news-card .peek-btn {
+  margin-top: 8px;
+  min-height: 40px;
+  font-size: 14px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

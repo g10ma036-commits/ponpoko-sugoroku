@@ -96,11 +96,19 @@ export function GameScreen() {
   useEffect(() => setBgmMode(bgm), [bgm]);
   useEffect(() => () => setBgmMode('normal'), []);
 
+  // ニュースの「地図で見る」：少しのあいだ カメラをその駅へ向ける
+  const [peek, setPeek] = useState<string | null>(null);
+  useEffect(() => {
+    if (!peek) return;
+    const t = window.setTimeout(() => setPeek(null), 2600);
+    return () => window.clearTimeout(t);
+  }, [peek]);
+
   // 人間の移動中は、止まれるマスを計算して光らせる
-  const moveKey = ph.t === 'moving' && !p.isCpu && ph.steps > 0 ? `${p.pos}|${ph.prev}|${ph.steps}|${game.destination}` : '';
+  const moveKey = ph.t === 'moving' && !p.isCpu && ph.steps > 0 ? `${p.pos}|${ph.prev}|${ph.steps}` : '';
   const ends = useMemo(() => {
     if (!moveKey || ph.t !== 'moving') return [];
-    return [...reachableEnds(p.pos, ph.prev, ph.steps, game.destination)];
+    return [...reachableEnds(p.pos, ph.prev, ph.steps)];
   }, [moveKey]);
 
   // ---- ゲームを自動で進める（CPUの考え、1マスずつの移動、メッセージの自動送り）
@@ -172,7 +180,7 @@ export function GameScreen() {
   if (gameOver) return <ResultScreen game={game} />;
 
   const lastRollDice = ph.t === 'moving' ? ph.dice : [];
-  const tip = prefs.tutorial && !paused && !opening && !cutin ? currentTip(game, humanTurn, ends.length, tipsSeen) : null;
+  const tip = prefs.tutorial && !paused && !opening && !cutin ? currentTip(game, humanTurn, ends.length, tipsSeen, ends.includes(game.destination)) : null;
 
   return (
     <div className="game">
@@ -199,7 +207,7 @@ export function GameScreen() {
             setSheet({ player: id });
           }}
           voyage={voyage}
-          focus={opening ? undefined : msg?.focus}
+          focus={opening ? undefined : (msg?.focus ?? peek ?? undefined)}
         />
         {prefs.fx && <Weather month={game.month} />}
         <BoardTools
@@ -226,6 +234,7 @@ export function GameScreen() {
         game={game}
         humanTurn={humanTurn}
         ends={ends.length}
+        canArrive={ends.includes(game.destination)}
         sailing={voyage !== null}
         fastForward={fastForward}
         onRoll={() => dispatch({ t: 'ROLL' })}
@@ -261,7 +270,18 @@ export function GameScreen() {
           }
         />
       )}
-      {sheet === 'news' && !msg && <NewsSheet game={game} onClose={() => setSheet(null)} />}
+      {sheet === 'news' && !msg && (
+        <NewsSheet
+          game={game}
+          onClose={() => setSheet(null)}
+          onPeek={(node) => {
+            sfx.tap();
+            setSheet(null);
+            setOverview(false);
+            setPeek(node);
+          }}
+        />
+      )}
       {sheet === 'menu' && (
         <Sheet title="メニュー" onClose={() => setSheet(null)}>
           <div className="menu-list">
@@ -309,6 +329,8 @@ interface ActionBarProps {
   humanTurn: boolean;
   /** 止まれるマスの数 */
   ends: number;
+  /** おまつり会場に ぴったり止まれる */
+  canArrive: boolean;
   /** フェリーで移動中 */
   sailing: boolean;
   fastForward: boolean;
@@ -317,7 +339,7 @@ interface ActionBarProps {
   onFast: () => void;
 }
 
-function ActionBar({ game, humanTurn, ends, sailing, fastForward, onRoll, onCards, onFast }: ActionBarProps) {
+function ActionBar({ game, humanTurn, ends, canArrive, sailing, fastForward, onRoll, onCards, onFast }: ActionBarProps) {
   const p = game.players[game.turn];
   const ph = game.phase;
   const color = CHARACTERS[p.charId].color;
@@ -350,6 +372,9 @@ function ActionBar({ game, humanTurn, ends, sailing, fastForward, onRoll, onCard
     let main = `のこり ${ph.steps} マス`;
     if (humanTurn && ph.goal) {
       main = `🚩 えらんだマスへ すすみ中（のこり ${ph.steps}）`;
+    } else if (humanTurn && canArrive) {
+      main = '🏮 会場に ぴったり止まれる！';
+      sub = '光っている 会場を押してね';
     } else if (humanTurn && ph.options && ph.steps === 1) {
       main = '✨ 止まりたいマスを 押してね';
       sub = 'マスの説明を 見てから 進めるよ';

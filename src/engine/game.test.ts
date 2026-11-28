@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FERRY, NODE, START_STATION, STATION_IDS } from '../data/map';
 import { PROPS_BY_STATION } from '../data/properties';
-import { decide } from './ai';
+import { LEVEL_TUNING, decide } from './ai';
 import { BOOM_MULT, HOT_MULT, SLUMP_MULT, assets, createGame, income, nearestStation, propIncome, reduce, yearlyIncome } from './game';
 import { ADJ, dist, reachableEnds } from './graph';
 import type { Action, GameState } from './types';
@@ -88,27 +88,40 @@ describe('ゲームの進行', () => {
     expect(walked).toBeLessThanOrEqual(total);
   });
 
-  it('おまつり会場を通りかかったら、そこで止まって賞金がもらえる', () => {
-    let s = ackAll(createGame(cfg(5)));
-    // 会場のとなりのマスに置いて、6マス進ませる
+  /** 会場のとなりのマスから、ぴったり札で num マス進む（分かれ道では会場のほうを選ぶ）。会場を通ったかも返す */
+  const walkFromNextToDest = (num: number) => {
+    let s = structuredClone(ackAll(createGame(cfg(5))));
     const dest = s.destination;
-    const next = ADJ[dest][0];
-    s = structuredClone(s);
-    s.players[0].pos = next;
+    s.players[0].pos = ADJ[dest][0];
     s.players[0].cards = ['pittari'];
     const before = s.players[0].money;
-    s = act(s, { t: 'USE_CARD', index: 0, num: 6 });
-    // 会場の方向を選びながら進む
+    s = act(s, { t: 'USE_CARD', index: 0, num });
+    let passed = false;
     let guard = 0;
-    while (s.phase.t === 'moving' && s.queue.length === 0 && guard++ < 10) {
+    while (s.phase.t === 'moving' && s.queue.length === 0 && guard++ < 20) {
       const ph = s.phase;
       s = ph.options ? act(s, { t: 'DIR', to: ph.options.includes(dest) ? dest : ph.options[0] }) : act(s, { t: 'STEP' });
+      if (s.players[0].pos === dest) passed = true;
     }
+    return { s, dest, before, passed };
+  };
+
+  it('おまつり会場に ぴったり止まると、到着して賞金がもらえる', () => {
+    const { s, dest, before } = walkFromNextToDest(1);
     expect(s.players[0].pos).toBe(dest);
     expect(s.players[0].arrivals).toBe(1);
     expect(s.players[0].money).toBeGreaterThan(before);
     expect(s.destination).not.toBe(dest);
     expect(s.queue.some((m) => m.tone === 'arrival')).toBe(true);
+  });
+
+  it('おまつり会場は 通りすぎるだけでは 到着にならない', () => {
+    const { s, dest, passed } = walkFromNextToDest(3);
+    expect(passed).toBe(true);
+    expect(s.players[0].pos).not.toBe(dest);
+    expect(s.players[0].arrivals).toBe(0);
+    expect(s.destination).toBe(dest);
+    expect(s.queue.some((m) => m.tone === 'arrival')).toBe(false);
   });
 
   it('物件を買い、ひとりじめすると収益が2倍になる', () => {
@@ -284,7 +297,7 @@ describe('止まれるマス', () => {
       const steps = (i % 12) + 1;
       const s = rolledAt(500 + i, pos, steps);
       if (s.phase.t !== 'moving') throw new Error();
-      const ends = reachableEnds(pos, s.phase.prev, steps, s.destination);
+      const ends = reachableEnds(pos, s.phase.prev, steps);
       expect([...ends].sort(), `${pos} から ${steps}マス`).toEqual([...bruteForce(s)].sort());
     }
   });
@@ -295,7 +308,7 @@ describe('止まれるマス', () => {
       const pos = ids[(i * 53) % ids.length];
       const s = rolledAt(900 + i, pos, (i % 15) + 3);
       if (s.phase.t !== 'moving') throw new Error();
-      for (const goal of reachableEnds(pos, s.phase.prev, s.phase.steps, s.destination)) {
+      for (const goal of reachableEnds(pos, s.phase.prev, s.phase.steps)) {
         const r = finish(act(s, { t: 'GOAL', to: goal }), (o) => o[0]);
         expect(r.pos).toBe(goal);
         expect(r.usedDir).toBe(false);
@@ -306,7 +319,7 @@ describe('止まれるマス', () => {
   it('止まれないマスは選べない', () => {
     const s = rolledAt(77, 'nigiwai', 4);
     if (s.phase.t !== 'moving') throw new Error();
-    const ends = reachableEnds('nigiwai', s.phase.prev, 4, s.destination);
+    const ends = reachableEnds('nigiwai', s.phase.prev, 4);
     const bad = Object.keys(NODE).find((id) => !ends.has(id))!;
     expect(reduce(s, { t: 'GOAL', to: bad })).toBe(s);
   });
@@ -400,7 +413,11 @@ describe('景気ニュース', () => {
     let guard = 0;
     let sawHot = false;
     while ((s.phase.t !== 'gameOver' || s.queue.length > 0) && guard++ < 30000) {
-      if (s.queue[0]?.title === 'ニュース速報！') sawHot = true;
+      if (s.queue[0]?.title === 'ニュース速報！') {
+        sawHot = true;
+        // 激アツ駅の発表では、カメラが その駅へ飛ぶ
+        expect(s.queue[0].focus).toBe(s.economy?.hot);
+      }
       s = reduce(s, decide(s)!);
     }
     expect(sawHot).toBe(true);
@@ -431,6 +448,35 @@ describe('CPU', () => {
     const careful = structuredClone(base);
     careful.players[0].charId = 'penkichi';
     expect(decide(careful)).toEqual({ t: 'DONE' });
+  });
+
+  it('CPUは、会場に ぴったり止まれる道があれば その道をえらぶ（どの強さでも。わざと迷う分はのぞく）', () => {
+    for (const level of [1, 2, 3] as const) {
+      const saved = LEVEL_TUNING[level].mistake;
+      LEVEL_TUNING[level].mistake = 0;
+      let hits = 0;
+      let tries = 0;
+      for (let seed = 0; seed < 12; seed++) {
+        let s = structuredClone(ackAll(createGame(cfg(300 + seed))));
+        const dest = s.destination;
+        // 会場まで ちょうど steps マスの、分かれ道のあるマスから ふる
+        const steps = 2 + (seed % 4);
+        const pos = Object.keys(ADJ).find((id) => ADJ[id].length >= 3 && dist(id, dest) === steps);
+        if (!pos) continue;
+        tries++;
+        s.players[0].pos = pos;
+        s.players[0].isCpu = true;
+        s.players[0].cpuLevel = level;
+        s.players[0].cards = ['pittari'];
+        s = act(s, { t: 'USE_CARD', index: 0, num: steps });
+        let guard = 0;
+        while (s.phase.t === 'moving' && s.queue.length === 0 && guard++ < 30) s = reduce(s, decide(s)!);
+        if (s.players[0].arrivals === 1) hits++;
+      }
+      LEVEL_TUNING[level].mistake = saved;
+      expect(tries).toBeGreaterThanOrEqual(8);
+      expect(hits, `強さ ${level}`).toBe(tries);
+    }
   });
 
   it('CPUだけの対戦が、いろいろなシードで最後まで進む', () => {

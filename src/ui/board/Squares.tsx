@@ -1,6 +1,7 @@
 // マスと駅。駅の下には物件の数だけ小さな家を並べ、買われた家は持ち主の色になる。
 // 物件が買われると、駅に大きな家が にょきっと建ち、小さな家の場所へ すいこまれる。
 // ひとりじめされた駅は、金色のふちと 持ち主の色の旗で目立たせる。
+// 激アツ駅（6月のニュース速報の駅）は、うしろで炎が燃えて、駅名に「🔥激アツ」の札がつく。
 import { memo, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { NODE, NODES, REGIONS } from '../../data/map';
 import { PROP, PROPS_BY_STATION } from '../../data/properties';
@@ -35,6 +36,8 @@ interface Props {
   destination: string;
   /** いま建っている最中の物件（小さな家を あとから にょきっと出す） */
   pops?: Pop[];
+  /** 激アツ駅（ニュース速報の駅） */
+  hot?: string;
 }
 
 const squares = NODES.filter((n) => n.kind !== 'station');
@@ -49,6 +52,36 @@ const MONO_AT: Record<string, { x: number; y: number; dir: 1 | -1 }> = {
   right: { x: 22, y: -28, dir: 1 },
   left: { x: -18, y: -28, dir: -1 },
 };
+
+/** 炎（根もとが 0,0 で上へ のびる）と、その中の明るいところ */
+const FLAME = 'M0,0 C-12,-1 -13,-15 -6,-25 C-5,-18 -1,-19 -1,-34 C6,-25 14,-17 11,-7 C10,-2 5,0 0,0 Z';
+const FLAME_IN = 'M0,-2 C-6,-2 -7,-10 -3,-16 C-1,-11 2,-12 2,-19 C7,-12 7,-6 5,-3 C4,-2 2,-2 0,-2 Z';
+/** 駅の箱のまわりの炎の位置（x, y, 向き, 大きさ） */
+const FIRE: [number, number, number, number][] = [
+  [-27, 10, -72, 1.15],
+  [-24, -16, -38, 1.3],
+  [-10, -24, -10, 1.45],
+  [8, -24, 12, 1.55],
+  [24, -16, 38, 1.3],
+  [27, 10, 72, 1.15],
+];
+
+/** 激アツ駅のうしろで燃える炎 */
+function HotFire() {
+  return (
+    <g pointerEvents="none">
+      <circle r={56} className="hot-aura" fill="#ff7a2a" />
+      {FIRE.map(([x, y, r, k], i) => (
+        <g key={i} transform={`translate(${x} ${y}) rotate(${r}) scale(${k})`}>
+          <g className="flame" style={{ animationDelay: `${(i % 3) * 0.17}s` }}>
+            <path d={FLAME} fill="#ff5a1f" stroke="#c2340c" strokeWidth={2} strokeLinejoin="round" />
+            <path d={FLAME_IN} fill="#ffd23f" />
+          </g>
+        </g>
+      ))}
+    </g>
+  );
+}
 
 /** 小さな家（物件1件ぶん） */
 const HOUSE = 'M-6,5 L-6,-1 L0,-6.5 L6,-1 L6,5 Z';
@@ -91,7 +124,7 @@ export function useBuildPops(owner: Record<string, number>): Pop[] {
   return pops;
 }
 
-export const Squares = memo(function Squares({ owner, colors, destination, pops = [] }: Props) {
+export const Squares = memo(function Squares({ owner, colors, destination, pops = [], hot }: Props) {
   const growing = new Set(pops.flatMap((pp) => pp.props));
 
   return (
@@ -117,8 +150,10 @@ export const Squares = memo(function Squares({ owner, colors, destination, pops 
         const first = owner[props[0].id];
         const mono = first !== undefined && props.every((p) => owner[p.id] === first) ? first : undefined;
         const mf = MONO_AT[lp.side];
+        const isHot = n.id === hot;
         return (
           <g key={n.id} data-node={n.id} className="tappable" transform={`translate(${n.x} ${n.y})`}>
+            {isHot && <HotFire />}
             {isDest && (
               <circle r={44} className="dest-ring" fill="none" stroke="#ff5a5a" strokeWidth={6} />
             )}
@@ -134,6 +169,15 @@ export const Squares = memo(function Squares({ owner, colors, destination, pops 
               <text className="st-label" y={7} fill={isDest ? '#fff' : '#4a3426'}>
                 {label}
               </text>
+              {/* 激アツ駅の札（駅名の左上に はる） */}
+              {isHot && (
+                <g transform={`translate(${-w / 2 + 24} -21) rotate(-8)`} className="hot-tag">
+                  <rect x={-37} y={-13} width={74} height={25} rx={12.5} fill="#ff5a1f" stroke="#fff" strokeWidth={3} />
+                  <text className="hot-tag-text" y={6}>
+                    🔥激アツ
+                  </text>
+                </g>
+              )}
             </g>
             {/* 物件の小さな家（白は まだだれも持っていない） */}
             <g transform={`translate(${-(props.length - 1) * 7} ${lp.dotsDy})`}>

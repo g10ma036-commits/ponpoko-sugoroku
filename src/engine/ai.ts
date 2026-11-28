@@ -18,6 +18,8 @@ import type { Action, CardId, CpuLevel, GameState, Player } from './types';
 export interface LevelTuning {
   /** 分かれ道で でたらめに選ぶ割合 */
   mistake: number;
+  /** 止まるマスまで 先を読んで 道をえらぶ（読まないときは 目の前のマスが会場に近いほうへ。ぴったり着ける道だけは どの強さでも見つける） */
+  routeSense: boolean;
   /** カードを使わずに ただサイコロをふる割合（いそぎ屋は cardSkipRush） */
   cardSkip: number;
   cardSkipRush: number;
@@ -50,7 +52,8 @@ export interface LevelTuning {
 export const LEVEL_TUNING: Record<CpuLevel, LevelTuning> = {
   // よわい：よく道をまちがえる・カードをあまり使わない・物件の買い方が気まぐれ
   1: {
-    mistake: 0.28,
+    mistake: 0.36,
+    routeSense: false,
     cardSkip: 0.6,
     cardSkipRush: 0.35,
     cardSense: false,
@@ -68,7 +71,8 @@ export const LEVEL_TUNING: Record<CpuLevel, LevelTuning> = {
   },
   // ふつう：ときどき道に迷う。手元に余裕を残して物件を買うが、見送ることもある
   2: {
-    mistake: 0.15,
+    mistake: 0.2,
+    routeSense: true,
     cardSkip: 0,
     cardSkipRush: 0,
     cardSense: true,
@@ -87,6 +91,7 @@ export const LEVEL_TUNING: Record<CpuLevel, LevelTuning> = {
   // つよい：くもすけの受け渡しや 靴を使う距離まで考える。たまに迷う
   3: {
     mistake: 0.08,
+    routeSense: true,
     cardSkip: 0,
     cardSkipRush: 0,
     cardSense: true,
@@ -171,9 +176,14 @@ function decideAction(s: GameState, p: Player): Action {
   }
   if (has('pittari') && d >= 1 && d <= pittariMax(p)) return use('pittari', { num: d });
   if (t.shoeSense && p.sleep === 0) {
-    // 目的地に届く見込みが高いときに使う（通りすぎても到着になるので「合計 ≥ 距離」で考える）
-    if (has('kakeashi') && d >= 4 && d <= 8) return use('kakeashi');
-    if (has('hayate') && d >= 8 && d <= 13) return use('hayate');
+    // 会場には ぴったりの目でしか止まれないので、ぴったり着ける見込みがいちばん高い ふり方をえらぶ
+    const c1 = arriveChance(p.pos, s.destination, 1);
+    const c2 = has('kakeashi') ? arriveChance(p.pos, s.destination, 2) : 0;
+    const c3 = has('hayate') ? arriveChance(p.pos, s.destination, 3) : 0;
+    if (c3 > c1 + 0.03 && c3 >= c2) return use('hayate');
+    if (c2 > c1 + 0.03) return use('kakeashi');
+    if (c1 > 0) return { t: 'ROLL' };
+    // まだ遠いときは、靴で 一気に近づく
     if (has('hayate') && d >= 18) return use('hayate');
     if (has('kakeashi') && d >= 12) return use('kakeashi');
     if (has('fusen') && d >= 30) return use('fusen');
@@ -188,11 +198,30 @@ function decideAction(s: GameState, p: Player): Action {
   return { t: 'ROLL' };
 }
 
+/** dice 個のサイコロ（1〜sides）をふって、会場に ぴったり止まれる見込み（分かれ道は うまく選ぶとして） */
+export function arriveChance(pos: string, dest: string, dice: number, sides = 6): number {
+  // 出目の合計ごとの確率
+  let dp = [1];
+  for (let i = 0; i < dice; i++) {
+    const next: number[] = [];
+    dp.forEach((pr, sum) => {
+      if (!pr) return;
+      for (let k = 1; k <= sides; k++) next[sum + k] = (next[sum + k] ?? 0) + pr / sides;
+    });
+    dp = next;
+  }
+  let chance = 0;
+  dp.forEach((pr, sum) => {
+    if (pr && sum > 0 && reachableEnds(pos, null, sum).has(dest)) chance += pr;
+  });
+  return chance;
+}
+
 const LAND_BONUS: Record<string, number> = { minus: 15, plus: -3, card: -3, omikuji: -2, shop: 0, station: -4, ferry: 0 };
 
 /** フェリーに乗ると、おまつり会場まで 3マス以上（のりもの好きは1マス以上）近くなる乗り場に止まれるなら、そのマス */
 function ferryGoal(s: GameState, p: Player, prev: string | null, steps: number): string | null {
-  const ends = reachableEnds(p.pos, prev, steps, s.destination);
+  const ends = reachableEnds(p.pos, prev, steps);
   if (ends.has(s.destination)) return null;
   let bestWalk = Infinity;
   for (const e of ends) bestWalk = Math.min(bestWalk, dist(e, s.destination));
@@ -223,14 +252,17 @@ function decideDir(s: GameState, p: Player, options: string[], steps: number): s
   let best = options[0];
   let bestScore = Infinity;
   options.forEach((o, i) => {
-    let score = dist(o, s.destination) * 10;
+    // この道を行ったとき、止まれるマスのうち 会場にいちばん近いところ（0 なら ぴったり着ける）
+    let near = Infinity;
+    for (const e of reachableEnds(o, p.pos, steps - 1)) near = Math.min(near, dist(e, s.destination));
+    let score = near === 0 ? -100 : (t.routeSense ? near : dist(o, s.destination)) * 10;
     if (t.landSense && steps === 1) score += (LAND_BONUS[NODE[o].kind] ?? 0) + (PERSONA[p.charId].land[NODE[o].kind] ?? 0);
     if (t.kumoSense && holder !== null) {
       const left = steps - 1;
       if (holder === p.id) {
         // くもすけをだれかに押しつけられそうなら、そっちへ
-        const near = Math.min(...s.players.filter((q) => q.id !== p.id).map((q) => dist(o, q.pos)));
-        if (near <= left) score -= 8;
+        const other = Math.min(...s.players.filter((q) => q.id !== p.id).map((q) => dist(o, q.pos)));
+        if (other <= left) score -= 8;
       } else if (dist(o, s.players[holder].pos) <= left) {
         score += 8;
       }

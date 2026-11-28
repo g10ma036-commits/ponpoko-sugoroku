@@ -2,6 +2,8 @@
 // マスやコマを押すと説明、光っているマス（止まれるマス）を押すと、説明を見てからそこまで一気に進める。
 // フェリーに乗るときは、船が航路をわたるアニメーションを出す。
 // おまつり会場の発表では、カメラが会場まで飛んで ちょうちんが灯る。くもすけは 雨をふらせながら コマからコマへ飛びうつる。
+// 会場には ぴったりの目でしか止まれない。止まれるときは「ぴったり止まれる！」の札、通りすぎたときは「おしい！」を出す。
+// 激アツ駅の発表（6月）でも、カメラが その駅へ飛ぶ。
 import { useGesture } from '@use-gesture/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { CharShape, VIEWBOX } from '../../characters/Characters';
@@ -35,7 +37,7 @@ interface Props {
   onInspect: (node: string) => void;
   onPlayer: (id: number) => void;
   voyage: VoyageInfo | null;
-  /** カメラを向けるマス（おまつり会場の発表のとき） */
+  /** カメラを向けるマス（おまつり会場・激アツ駅の発表のとき） */
   focus?: string;
 }
 
@@ -218,6 +220,21 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
 
   const pops = useBuildPops(game.owner);
 
+  // おまつり会場の発表と、激アツ駅の発表で 飾りを変える
+  const festFocus = focus !== undefined && focus === game.destination;
+  const dest = NODE[game.destination];
+  const canArrive = showEnds.includes(game.destination);
+
+  // 会場を通りすぎたら「おしい！」（ぴったりの目でないと止まれない）
+  const passing = ph.t === 'moving' && ph.steps > 0 && p.pos === game.destination;
+  const [passBy, setPassBy] = useState<number | null>(null);
+  useEffect(() => {
+    if (!passing) return;
+    const k = Date.now();
+    setPassBy(k);
+    window.setTimeout(() => setPassBy((v) => (v === k ? null : v)), 1700);
+  }, [passing]);
+
   const labels = getLabels();
   // 分かれ道の札の場所（先に置いた札とも ぶつからないように 順番に決める）
   const pills: Record<string, { x: number; y: number }> = {};
@@ -226,6 +243,13 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
     const len = Math.hypot(n.x - target.x, n.y - target.y) || 1;
     pills[o] = pillSpot(n, (n.x - target.x) / len, (n.y - target.y) / len, n.kind === 'station' ? 38 : 28, target, labels[o] ? labelBox(n, labels[o]) : null, Object.values(pills));
   }
+
+  // 「ぴったり止まれる！」の札の場所（ほかのマス・コマ・分かれ道の札と ぶつからない側）
+  const tag = canArrive ? exactSpot(dest, target, Object.values(pills), labels) : null;
+  // 全体マップのときは、会場と激アツ駅に 大きな目印を出す（画面の上で同じ大きさ）
+  const pinK = 1 / cam.z;
+  const showPins = cam.z < baseZoom * 0.6;
+  const hot = game.economy?.hot;
 
   const transform = `translate(${size.w / 2}px, ${size.h / 2}px) scale(${cam.z}) translate(${-cam.x}px, ${-cam.y}px)`;
 
@@ -241,12 +265,12 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
       <svg width={size.w} height={size.h} className="board-svg">
         <g style={{ transform, transition: dragging ? 'none' : `transform ${slowCam ? 1.2 : 0.45}s ease-in-out` }}>
           <MapLayer />
-          {/* おまつり会場の発表：後ろから光がさす */}
+          {/* おまつり会場・激アツ駅の発表：後ろから光がさす（激アツ駅は だいだい色） */}
           {focus && (
             <g key={`rays-${focus}`} transform={`translate(${NODE[focus].x} ${NODE[focus].y})`} pointerEvents="none">
               <g className="fest-rays">
                 {Array.from({ length: 12 }, (_, i) => (
-                  <path key={i} d="M0,0 L-16,-170 L16,-170 Z" transform={`rotate(${i * 30})`} fill="#fff6b0" />
+                  <path key={i} d="M0,0 L-16,-170 L16,-170 Z" transform={`rotate(${i * 30})`} fill={festFocus ? '#fff6b0' : '#ffb36b'} />
                 ))}
               </g>
             </g>
@@ -255,10 +279,10 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
           {showEnds.map((id) => (
             <circle key={id} cx={NODE[id].x} cy={NODE[id].y} r={NODE[id].kind === 'station' ? 50 : 38} fill="#fff27a" opacity={0.9} className="reach-glow" />
           ))}
-          <Squares owner={game.owner} colors={colors} destination={game.destination} pops={pops} />
+          <Squares owner={game.owner} colors={colors} destination={game.destination} pops={pops} hot={game.economy?.hot} />
 
           {/* おまつり会場の発表：ちょうちんが 順番に灯る */}
-          {focus && (
+          {festFocus && (
             <g key={`lights-${focus}`} transform={`translate(${NODE[focus].x} ${NODE[focus].y})`} pointerEvents="none">
               {Array.from({ length: 10 }, (_, i) => {
                 const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
@@ -357,6 +381,30 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
             <circle key={id} data-goal={id} cx={NODE[id].x} cy={NODE[id].y} r={40} fill="transparent" className="reach-hit" />
           ))}
 
+          {/* 会場に ぴったり止まれる！（押すと 会場へ） */}
+          {tag && (
+            <g data-goal={game.destination} transform={`translate(${tag.x} ${tag.y})`} className="reach-hit">
+              <g className="exact-tag">
+                <rect x={-TAG_W / 2} y={-TAG_H / 2} width={TAG_W} height={TAG_H} rx={TAG_H / 2} fill="#ff5a5a" stroke="#fff" strokeWidth={3.5} />
+                <path d={TAG_ARROW[tag.dir]} fill="#ff5a5a" />
+                <text className="exact-tag-text" y={6}>
+                  🏮 ぴったり止まれる！
+                </text>
+              </g>
+            </g>
+          )}
+          {/* 会場を 通りすぎた */}
+          {passBy !== null && (
+            <g key={passBy} transform={`translate(${dest.x} ${dest.y - 138})`} pointerEvents="none">
+              <g className="pass-pop">
+                <rect x={-96} y={-20} width={192} height={36} rx={18} fill="#ffffff" stroke="#ff5a5a" strokeWidth={3.5} />
+                <text className="pass-pop-text" y={6}>
+                  おしい！ 通りすぎ〜
+                </text>
+              </g>
+            </g>
+          )}
+
           {/*
             分かれ道：となりのマスを 自分の色の輪でかこみ、外側に 進む向きの矢印と 会場までのマス数を出す。
             マスそのものは かくさないので、何のマス・何の駅か 見える。
@@ -400,6 +448,22 @@ export function Board({ game, overview, canChoose, ends, onChoose, onGoal, onIns
               </g>
             );
           })}
+          {/* 全体マップの目印：🏮 おまつり会場・🔥 激アツ駅 */}
+          {showPins &&
+            [
+              { id: game.destination, icon: '🏮', color: '#ff5a5a' },
+              ...(hot && hot !== game.destination ? [{ id: hot, icon: '🔥', color: '#ff7a1f' }] : []),
+            ].map((pin) => (
+              <g key={pin.id} transform={`translate(${NODE[pin.id].x} ${NODE[pin.id].y}) scale(${pinK})`} pointerEvents="none">
+                <g className="map-pin">
+                  <path d="M-9,-18 L0,-2 L9,-18 Z" fill={pin.color} stroke="#fff" strokeWidth={2.5} strokeLinejoin="round" />
+                  <circle cy={-34} r={19} fill={pin.color} stroke="#fff" strokeWidth={3.5} />
+                  <text className="pin-icon" y={-27}>
+                    {pin.icon}
+                  </text>
+                </g>
+              </g>
+            ))}
         </g>
       </svg>
       {focus && <div key={`spot-${focus}`} className="fest-spot" />}
@@ -447,6 +511,53 @@ function pillSpot(
       best = c;
     }
   }
+  return best;
+}
+
+const TAG_W = 200;
+const TAG_H = 36;
+type TagDir = 'down' | 'up' | 'left' | 'right';
+/** 札から 会場を指す三角 */
+const TAG_ARROW: Record<TagDir, string> = {
+  down: `M-9,${TAG_H / 2 - 2} L0,${TAG_H / 2 + 11} L9,${TAG_H / 2 - 2} Z`,
+  up: `M-9,${-TAG_H / 2 + 2} L0,${-TAG_H / 2 - 11} L9,${-TAG_H / 2 + 2} Z`,
+  left: `M${-TAG_W / 2 + 2},-9 L${-TAG_W / 2 - 11},0 L${-TAG_W / 2 + 2},9 Z`,
+  right: `M${TAG_W / 2 - 2},-9 L${TAG_W / 2 + 11},0 L${TAG_W / 2 - 2},9 Z`,
+};
+
+/**
+ * 「ぴったり止まれる！」の札を置く場所。会場の上・下・右・左のうち、
+ * 今いるマスとコマ・ほかのマス・分かれ道の札・駅の名前に いちばん ぶつからないところ。
+ */
+function exactSpot(
+  dest: { id: string; x: number; y: number },
+  from: { x: number; y: number },
+  pills: { x: number; y: number }[],
+  labels: ReturnType<typeof getLabels>,
+): { x: number; y: number; dir: TagDir } {
+  const cands: { x: number; y: number; dir: TagDir }[] = [
+    { x: dest.x, y: dest.y - 106, dir: 'down' },
+    { x: dest.x, y: dest.y + 100, dir: 'up' },
+    { x: dest.x + 142, y: dest.y - 46, dir: 'left' },
+    { x: dest.x - 142, y: dest.y - 46, dir: 'right' },
+  ];
+  const hw = TAG_W / 2;
+  const hh = TAG_H / 2;
+  const near = NODES.filter((o) => Math.abs(o.x - dest.x) < 360 && Math.abs(o.y - dest.y) < 260);
+  const boxes = near.filter((o) => labels[o.id]).map((o) => labelBox(o, labels[o.id]));
+  let best = cands[0];
+  let bestHits = Infinity;
+  cands.forEach((c, i) => {
+    let k = i * 0.3;
+    if (Math.abs(c.x - from.x) < hw + 36 && c.y + hh > from.y - 130 && c.y - hh < from.y + 30) k += 5;
+    for (const o of near) if (o.id !== dest.id && Math.abs(o.x - c.x) < hw + 22 && Math.abs(o.y - c.y) < hh + 22) k += 1;
+    for (const p of pills) if (Math.abs(p.x - c.x) < hw + 30 && Math.abs(p.y - c.y) < hh + 14) k += 3;
+    for (const b of boxes) if (c.x + hw > b.x0 && c.x - hw < b.x1 && c.y + hh > b.y0 && c.y - hh < b.y1) k += 2;
+    if (k < bestHits) {
+      bestHits = k;
+      best = c;
+    }
+  });
   return best;
 }
 
